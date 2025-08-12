@@ -4,11 +4,13 @@ import {
   createTransaction,
   Instruction,
   KeyPairSigner,
+  Signature,
   signTransactionMessageWithSigners,
 } from 'gill'
 import { getGreetInstruction } from '../src'
 // @ts-ignore error TS2307 suggest setting `moduleResolution` but this is already configured
 import { loadKeypairSignerFromFile } from 'gill/node'
+import { describe, it } from 'node:test'
 
 const { rpc, sendAndConfirmTransaction } = createSolanaClient({ urlOrMoniker: process.env.ANCHOR_PROVIDER_URL! })
 describe('nftmarketplacedapp', () => {
@@ -52,4 +54,10 @@ async function sendAndConfirm({ ix, payer }: { ix: Instruction; payer: KeyPairSi
   })
   const signedTransaction = await signTransactionMessageWithSigners(tx)
   return await sendAndConfirmTransaction(signedTransaction)
+}
+function beforeAll(arg0: () => Promise<void>) {
+  throw new Error('Function not implemented.')
+}
+function expect(sx: Signature) {
+  throw new Error('Function not implemented.')
 }
