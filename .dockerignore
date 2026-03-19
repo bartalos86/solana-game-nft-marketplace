@@ -1,0 +1,33 @@
+.git
+.github
+.cursor
+.next
+node_modules
+**/node_modules
+**/.next
+**/dist
+**/build
+**/.turbo
+**/.cache
+**/.idea
+**/.vscode
+**/*.log
+**/.DS_Store
+
+# Large/unrelated projects not needed for platform-frontend image
+auction-house-sdk
+eth-project
+experiment
+game-casino
+metaplex
+prebuilt-programs
+
+# Rust / Anchor artifacts
+anchor/target
+anchor/.idea
+
+# Required build inputs for platform-frontend
+!anchor/target/idl
+!anchor/target/idl/**
+!game-sdk/dist
+!game-sdk/dist/**

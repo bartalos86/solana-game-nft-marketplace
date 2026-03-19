@@ -1,0 +1,33 @@
+---
+config:
+  theme: redux-color
+  look: neo
+---
+sequenceDiagram
+    actor Player
+    participant GameFrontend
+    participant GameBackend
+    participant GameItemContract
+    participant Ethereum
+
+    Player->>GameFrontend: Mint item as NFT
+    GameFrontend->>GameBackend: Send playerAddress
+
+    GameBackend->>GameBackend: Upload metadata and asset image
+    GameBackend->>GameBackend: Create Mint struct (to, uri, nonce)
+    GameBackend->>GameBackend: Compute structHash = keccak256(MINT_TYPEHASH, to, keccak256(uri), nonce)
+    GameBackend->>GameBackend: Compute digest with EIP712(domain, structHash)
+    GameBackend->>GameBackend: Sign digest with private key → signature
+
+    GameBackend-->>GameFrontend: Return signature + nonce + uri
+    GameFrontend-->>Player: Request confirmation
+
+    Player->>GameFrontend: Confirm mint
+    GameFrontend->>GameItemContract: mintWithSignature(to, uri, nonce, signature)
+
+    GameItemContract->>GameItemContract: Recompute structHash, digest
+    GameItemContract->>GameItemContract: signer = ECDSA.recover(signature)
+    GameItemContract->>GameItemContract: Check signer == owner and signature unused
+
+    GameItemContract->>Ethereum: _safeMint(to, tokenId)
+    Ethereum-->>Player: NFT minted to wallet

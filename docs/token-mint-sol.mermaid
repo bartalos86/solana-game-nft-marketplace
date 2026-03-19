@@ -1,0 +1,30 @@
+---
+config:
+  look: neo
+  theme: redux-color
+---
+sequenceDiagram
+    actor Player
+    participant GameFrontend
+    participant GameBackend
+    participant MetaplexTokenMetadataProgram
+    participant Solana
+
+
+    Player->>GameFrontend: Mint game-item
+    GameFrontend->>GameBackend: Send player address
+
+    GameBackend->>GameBackend: Upload metadata and asset image
+    GameBackend->>GameBackend: Create metaplex metadata mint transaction
+    GameBackend->>GameBackend: Sign and build transaction using Game's key
+    GameBackend->>GameBackend: Serialize transaction
+    GameBackend-->>GameFrontend: Return serialized transaction
+    GameFrontend-->>Player: Request confirmation
+    Player->>GameFrontend: Confirm mint
+
+    GameFrontend->>MetaplexTokenMetadataProgram: Sign and send createNft() transaction
+    MetaplexTokenMetadataProgram->>Solana: createV1
+    Solana-->>MetaplexTokenMetadataProgram: NFT created
+    MetaplexTokenMetadataProgram->>Solana: mintV1
+
+    Solana-->>Player: NFT minted to wallet

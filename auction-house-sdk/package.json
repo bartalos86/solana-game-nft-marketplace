@@ -1,0 +1,46 @@
+{
+  "name": "auction-house-sdk",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.modern.js",
+  "unpkg": "dist/index.umd.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && microbundle --tsconfig tsconfig.json --no-sourcemap --format modern,cjs",
+    "test": "yarn mocha 'test/**/*.spec.ts'"
+  },
+  "devDependencies": {
+    "@types/": "metaplex/arweave-cost",
+    "@types/bs58": "^4.0.4",
+    "@types/chai": "^5.2.3",
+    "@types/mocha": "^10.0.10",
+    "jest": "^30.2.0",
+    "microbundle": "^0.15.1",
+    "ts-node": "^10.9.2",
+    "types/": "metaplex/arweave-cost",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.32.1",
+    "@metaplex-foundation/mpl-token-metadata": "^3.4.0",
+    "@metaplex-foundation/umi-bundle-defaults": "^1.4.1",
+    "@project-serum/anchor": "^0.17.0",
+    "@solana/spl-token": "^0.1.8",
+    "chai": "^6.2.0",
+    "form-data": "^4.0.4",
+    "loglevel": "^1.7.1",
+    "mocha": "^11.7.4"
+  },
+  "peerDependencies": {
+    "@metaplex-foundation/umi": "^1.4.1",
+    "@metaplex/arweave-cost": "^1.0.4",
+    "@solana/web3.js": "1.33.0"
+  }
+}

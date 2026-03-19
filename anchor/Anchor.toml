@@ -6,14 +6,28 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-nftmarketplacedapp = "JAVuBXeBZqXNtS73azhBDAoYaaAFfo4gWXoZe2e7Jf8H"
+nftmarketplacedapp = "31vF6b8JkjfCU6nc5V8SpJC9QSxNyqfyKn5EAYRXjN1V"
+game_registry = "4jDnCxk12L9DNAiuMp3ddJYqFgsfpEW7aY4S7m8HFDwx"
+
+[programs.devnet]
+nftmarketplacedapp = "31vF6b8JkjfCU6nc5V8SpJC9QSxNyqfyKn5EAYRXjN1V"
+game_registry = "4jDnCxk12L9DNAiuMp3ddJYqFgsfpEW7aY4S7m8HFDwx"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "localnet"
-wallet = "~/.config/solana/id.json"
+wallet = "wallet/deployment_wallet"
 
 [scripts]
-test = "vitest"
+test = "yarn vitest run"
+
+[test.validator]
+url = "https://api.mainnet-beta.solana.com"
+# Clone Metaplex Token Metadata so list_nft / buy_nft / create_metadata etc. work.
+# When using --skip-local-validator, start the validator yourself first. Use
+# --clone-upgradeable-program (not --clone) so the program executable is copied:
+#   solana-test-validator --clone-upgradeable-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s --url https://api.mainnet-beta.solana.com --reset
+[[test.validator.clone]]
+address = "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"

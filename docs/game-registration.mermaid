@@ -1,0 +1,21 @@
+---
+config:
+  theme: redux-color
+  look: handDrawn
+---
+sequenceDiagram
+    actor Developer
+    participant Platform
+    participant Database
+    participant GameFactoryContract
+    participant Ethereum
+
+    Developer->>Platform: Register new game
+    Platform->>Platform: Generate Solana and Ethereum keypair
+    Platform->>Database: Store game metadata and public keys
+    Database-->>Platform: Game data stored
+    Platform->>GameFactoryContract: createGame(name, symbol, authority, royaltyBps)
+    GameFactoryContract->>Ethereum: new GameItemNFT(name, symbol, ...)
+
+    Ethereum-->>Platform: Game NFT Contract deployed
+    Platform-->>Developer: Game registered

@@ -1,0 +1,392 @@
+{
+  "address": "4jDnCxk12L9DNAiuMp3ddJYqFgsfpEW7aY4S7m8HFDwx",
+  "metadata": {
+    "name": "game_registry",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "On-chain game registry for NFT marketplace"
+  },
+  "instructions": [
+    {
+      "name": "register_game",
+      "docs": [
+        "Register a game. Only the platform authority can register. One game account per authority.",
+        "Seeds: [\"game\", authority]"
+      ],
+      "discriminator": [
+        122,
+        44,
+        95,
+        58,
+        89,
+        33,
+        40,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "platform_authority",
+          "docs": [
+            "Platform authority; must match PLATFORM_AUTHORITY. Pays for account creation."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The game owner (authority). Game PDA is derived from this key."
+          ]
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "image_uri",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "uri",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "fee_recipient",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "fee_percent_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "remove_game",
+      "docs": [
+        "Remove (close) a game account. Only the platform authority can remove. Rent goes to platform."
+      ],
+      "discriminator": [
+        208,
+        12,
+        103,
+        49,
+        155,
+        37,
+        215,
+        223
+      ],
+      "accounts": [
+        {
+          "name": "platform_authority",
+          "docs": [
+            "Platform authority; must match PLATFORM_AUTHORITY. Receives closed account rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The game owner (used to derive game PDA)."
+          ]
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_game",
+      "docs": [
+        "Update game metadata. Only the platform authority can update."
+      ],
+      "discriminator": [
+        159,
+        61,
+        132,
+        131,
+        3,
+        234,
+        209,
+        220
+      ],
+      "accounts": [
+        {
+          "name": "platform_authority",
+          "docs": [
+            "Platform authority; must match PLATFORM_AUTHORITY."
+          ],
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The game owner (used to derive game PDA)."
+          ]
+        },
+        {
+          "name": "game",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": {
+            "option": "string"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "option": {
+              "option": "string"
+            }
+          }
+        },
+        {
+          "name": "image_uri",
+          "type": {
+            "option": {
+              "option": "string"
+            }
+          }
+        },
+        {
+          "name": "uri",
+          "type": {
+            "option": {
+              "option": "string"
+            }
+          }
+        },
+        {
+          "name": "category",
+          "type": {
+            "option": {
+              "option": "string"
+            }
+          }
+        },
+        {
+          "name": "fee_recipient",
+          "type": {
+            "option": "pubkey"
+          }
+        },
+        {
+          "name": "fee_percent_bps",
+          "type": {
+            "option": "u16"
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Game",
+      "discriminator": [
+        27,
+        90,
+        166,
+        125,
+        74,
+        100,
+        121,
+        18
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Only the platform authority can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "FeePercentTooHigh",
+      "msg": "Fee percent exceeds maximum (10000 bps)"
+    },
+    {
+      "code": 6002,
+      "name": "NameTooLong",
+      "msg": "Game name exceeds max length"
+    },
+    {
+      "code": 6003,
+      "name": "DescriptionTooLong",
+      "msg": "Description exceeds max length"
+    },
+    {
+      "code": 6004,
+      "name": "ImageUriTooLong",
+      "msg": "Image URI exceeds max length"
+    },
+    {
+      "code": 6005,
+      "name": "UriTooLong",
+      "msg": "URI exceeds max length"
+    },
+    {
+      "code": 6006,
+      "name": "CategoryTooLong",
+      "msg": "Category exceeds max length"
+    }
+  ],
+  "types": [
+    {
+      "name": "Game",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authority (game owner); used as PDA seed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "docs": [
+              "Display name."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "description",
+            "docs": [
+              "Game description."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "image_uri",
+            "docs": [
+              "Cover/image URI."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "uri",
+            "docs": [
+              "Generic URI / website for the game."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "category",
+            "docs": [
+              "Category (e.g. Action, RPG)."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "fee_recipient",
+            "docs": [
+              "Fee recipient for marketplace / royalties (defaults to authority)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_percent_bps",
+            "docs": [
+              "Fee in basis points (10000 = 100%)."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ]
+}

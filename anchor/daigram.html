@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NFT Marketplace — Transfer Flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --accent: #7c3aed;
+    --accent2: #06b6d4;
+    --accent3: #f59e0b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --metaplex: #9333ea;
+    --solana: #14f195;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  /* Header */
+  header {
+    text-align: center;
+    margin-bottom: 64px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--solana);
+    border: 1px solid rgba(20,241,149,0.3);
+    padding: 4px 12px;
+    border-radius: 2px;
+    margin-bottom: 16px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(28px, 5vw, 52px);
+    font-weight: 800;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #fff 0%, var(--accent2) 50%, var(--metaplex) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    letter-spacing: 0.05em;
+  }
+
+  /* Tab selector */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 48px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .tab {
+    padding: 10px 24px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--surface);
+    color: var(--muted);
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-right: 1px solid var(--border);
+  }
+  .tab:last-child { border-right: none; }
+  .tab.active {
+    background: var(--accent);
+    color: #fff;
+  }
+  .tab:hover:not(.active) {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  /* Flow container */
+  .flow { display: none; }
+  .flow.active { display: block; animation: fadeIn 0.3s ease; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Section label */
+  .flow-label {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  /* Steps grid */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  /* Connector line */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 40px;
+    position: relative;
+  }
+
+  .connector::before {
+    content: '';
+    position: absolute;
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(to bottom, var(--border), var(--border));
+  }
+
+  .connector .arrow {
+    width: 24px;
+    height: 24px;
+    background: var(--bg);
+    border: 2px solid;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    z-index: 1;
+  }
+
+  .connector.purple .arrow { border-color: var(--accent); color: var(--accent); }
+  .connector.cyan .arrow   { border-color: var(--accent2); color: var(--accent2); }
+  .connector.amber .arrow  { border-color: var(--accent3); color: var(--accent3); }
+  .connector.green .arrow  { border-color: var(--success); color: var(--success); }
+
+  /* Step card */
+  .step {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.2s, transform 0.2s;
+    cursor: default;
+  }
+
+  .step:hover {
+    transform: translateX(4px);
+    border-color: var(--accent);
+  }
+
+  .step.highlight-purple { border-left: 3px solid var(--accent); }
+  .step.highlight-cyan   { border-left: 3px solid var(--accent2); }
+  .step.highlight-amber  { border-left: 3px solid var(--accent3); }
+  .step.highlight-green  { border-left: 3px solid var(--success); }
+  .step.highlight-red    { border-left: 3px solid var(--danger); }
+
+  .step-num {
+    width: 48px;
+    height: 48px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+
+  .num-purple { background: rgba(124,58,237,0.15); color: var(--accent); }
+  .num-cyan   { background: rgba(6,182,212,0.15);  color: var(--accent2); }
+  .num-amber  { background: rgba(245,158,11,0.15); color: var(--accent3); }
+  .num-green  { background: rgba(16,185,129,0.15); color: var(--success); }
+  .num-red    { background: rgba(239,68,68,0.15);  color: var(--danger); }
+
+  .step-body {}
+  .step-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #fff;
+  }
+  .step-desc {
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--muted);
+  }
+
+  /* Sub-steps / detail chips */
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .chip {
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 3px 8px;
+    border-radius: 2px;
+    border: 1px solid;
+  }
+  .chip-purple { border-color: rgba(124,58,237,0.4); color: var(--accent); background: rgba(124,58,237,0.08); }
+  .chip-cyan   { border-color: rgba(6,182,212,0.4);  color: var(--accent2); background: rgba(6,182,212,0.08); }
+  .chip-amber  { border-color: rgba(245,158,11,0.4); color: var(--accent3); background: rgba(245,158,11,0.08); }
+  .chip-green  { border-color: rgba(16,185,129,0.4); color: var(--success); background: rgba(16,185,129,0.08); }
+
+  /* Actors legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  /* Participants row */
+  .participants {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+  .participant {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 12px;
+    text-align: center;
+  }
+  .participant-icon {
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+  .participant-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .participant-role {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* Note box */
+  .note {
+    background: rgba(245,158,11,0.06);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: 6px;
+    padding: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 32px;
+    line-height: 1.8;
+  }
+  .note strong { color: var(--accent3); }
+
+  /* Two column layout for actors */
+  @media (min-width: 700px) {
+    .step-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .step-grid .step { margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="tag">Solana · Anchor 0.30 · Metaplex</div>
+    <h1>NFT Marketplace<br/>Transfer Flow</h1>
+    <p class="subtitle">How NFTs and SOL move through the marketplace program</p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showFlow('list')">① List NFT</button>
+    <button class="tab" onclick="showFlow('buy')">② Buy NFT</button>
+    <button class="tab" onclick="showFlow('cancel')">③ Cancel</button>
+    <button class="tab" onclick="showFlow('overview')">Full Overview</button>
+  </div>
+
+  <!-- LIST NFT -->
+  <div class="flow active" id="flow-list">
+    <p class="flow-label">list_nft instruction — seller initiates</p>
+    <div class="participants">
+      <div class="participant">
+        <div class="participant-icon">👤</div>
+        <div class="participant-name">Seller</div>
+        <div class="participant-role">Signer / Payer</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">🏦</div>
+        <div class="participant-name">Seller ATA</div>
+        <div class="participant-role">Source token account</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">📋</div>
+        <div class="participant-name">Listing PDA</div>
+        <div class="participant-role">seeds: [listing, seller, mint]</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">🔒</div>
+        <div class="participant-name">Escrow ATA</div>
+        <div class="participant-role">Owned by Listing PDA</div>
+      </div>
+    </div>
+
+    <div class="steps">
+
+      <div class="step highlight-purple">
+        <div class="step-num num-purple">1</div>
+        <div class="step-body">
+          <div class="step-title">Seller signs & submits transaction</div>
+          <div class="step-desc">Seller provides price (lamports) and expiry (unix timestamp) as instruction arguments. Seller pays rent for the new Listing PDA and Escrow ATA.</div>
+          <div class="chips">
+            <span class="chip chip-purple">price: u64</span>
+            <span class="chip chip-purple">expiry: i64</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector purple"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-purple">
+        <div class="step-num num-purple">2</div>
+        <div class="step-body">
+          <div class="step-title">Anchor initialises Listing PDA</div>
+          <div class="step-desc">A new account is created at the PDA derived from <code>[b"listing", seller, mint]</code>. The bump, price, expiry, seller pubkey, and mint pubkey are stored on-chain.</div>
+          <div class="chips">
+            <span class="chip chip-purple">seller</span>
+            <span class="chip chip-purple">mint</span>
+            <span class="chip chip-purple">price</span>
+            <span class="chip chip-purple">expiry</span>
+            <span class="chip chip-purple">bump</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector purple"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-cyan">
+        <div class="step-num num-cyan">3</div>
+        <div class="step-body">
+          <div class="step-title">Metaplex TransferV1 CPI called</div>
+          <div class="step-desc">The program invokes the Metaplex Token Metadata program via <code>TransferV1CpiBuilder</code>. This path handles both standard NFTs and pNFTs (Programmable NFTs with royalty enforcement).</div>
+          <div class="chips">
+            <span class="chip chip-cyan">mpl-token-metadata v4</span>
+            <span class="chip chip-cyan">TransferV1</span>
+            <span class="chip chip-cyan">amount: 1</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector cyan"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-cyan">
+        <div class="step-num num-cyan">4</div>
+        <div class="step-body">
+          <div class="step-title">Metaplex validates metadata & rules</div>
+          <div class="step-desc">Metadata account, Master Edition, and (for pNFTs) Token Record accounts are verified. Royalty rules from the NFT's <em>RuleSet</em> are enforced. Sysvar Instructions is read to detect CPI depth.</div>
+          <div class="chips">
+            <span class="chip chip-cyan">Metadata PDA</span>
+            <span class="chip chip-cyan">MasterEdition</span>
+            <span class="chip chip-cyan">TokenRecord (pNFT)</span>
+            <span class="chip chip-cyan">SysvarInstructions</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector green"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">5</div>
+        <div class="step-body">
+          <div class="step-title">NFT transferred to Escrow ATA</div>
+          <div class="step-desc">Token moves from Seller's ATA → Escrow ATA (authority = Listing PDA). The NFT is now locked in escrow until bought or the listing is cancelled.</div>
+          <div class="chips">
+            <span class="chip chip-green">Seller ATA → Escrow ATA</span>
+            <span class="chip chip-green">authority: seller (signer)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note">
+      <strong>pNFT note:</strong> For Programmable NFTs, the <code>seller_token_record</code> and <code>escrow_token_record</code> accounts must be passed. These track delegation state and enforce rule sets (e.g. creator royalties). For standard SPL NFTs they can be omitted (<code>None</code>).
+    </div>
+  </div>
+
+  <!-- BUY NFT -->
+  <div class="flow" id="flow-buy">
+    <p class="flow-label">buy_nft instruction — buyer initiates</p>
+    <div class="participants">
+      <div class="participant">
+        <div class="participant-icon">🛒</div>
+        <div class="participant-name">Buyer</div>
+        <div class="participant-role">Signer / Payer</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">💰</div>
+        <div class="participant-name">SOL Transfer</div>
+        <div class="participant-role">lamport rebalance</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">🔒</div>
+        <div class="participant-name">Escrow ATA</div>
+        <div class="participant-role">NFT source in escrow</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">📦</div>
+        <div class="participant-name">Buyer ATA</div>
+        <div class="participant-role">NFT destination</div>
+      </div>
+    </div>
+
+    <div class="steps">
+
+      <div class="step highlight-purple">
+        <div class="step-num num-purple">1</div>
+        <div class="step-body">
+          <div class="step-title">Buyer signs & submits transaction</div>
+          <div class="step-desc">Buyer submits the <code>buy_nft</code> instruction. Anchor validates that the Listing PDA seeds match and the account is not already closed.</div>
+        </div>
+      </div>
+
+      <div class="connector purple"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-amber">
+        <div class="step-num num-amber">2</div>
+        <div class="step-body">
+          <div class="step-title">Expiry guard checked</div>
+          <div class="step-desc">The program reads <code>Clock::get()?.unix_timestamp</code> and compares it to <code>listing.expiry</code>. If the listing has expired, the transaction aborts with <code>ErrorCode::ListingExpired</code>.</div>
+          <div class="chips">
+            <span class="chip chip-amber">Clock sysvar</span>
+            <span class="chip chip-amber">unix_timestamp ≤ expiry</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector amber"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-amber">
+        <div class="step-num num-amber">3</div>
+        <div class="step-body">
+          <div class="step-title">SOL transferred — Buyer → Seller</div>
+          <div class="step-desc">Lamports are moved directly by mutating both accounts' lamport fields. This is a native SOL transfer (no CPI needed). Amount = <code>listing.price</code>.</div>
+          <div class="chips">
+            <span class="chip chip-amber">buyer lamports -= price</span>
+            <span class="chip chip-amber">seller lamports += price</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector cyan"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-cyan">
+        <div class="step-num num-cyan">4</div>
+        <div class="step-body">
+          <div class="step-title">Metaplex TransferV1 CPI — PDA signed</div>
+          <div class="step-desc">The program calls <code>TransferV1CpiBuilder::invoke_signed()</code> using the Listing PDA's seeds as the signer. The PDA acts as the authority over the Escrow ATA.</div>
+          <div class="chips">
+            <span class="chip chip-cyan">seeds: [listing, seller, mint, bump]</span>
+            <span class="chip chip-cyan">invoke_signed</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector cyan"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">5</div>
+        <div class="step-body">
+          <div class="step-title">NFT transferred to Buyer's ATA</div>
+          <div class="step-desc">Token moves from Escrow ATA → Buyer ATA. Metaplex validates Metadata, MasterEdition, and TokenRecord accounts, then performs the SPL token transfer internally.</div>
+          <div class="chips">
+            <span class="chip chip-green">Escrow ATA → Buyer ATA</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector green"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">6</div>
+        <div class="step-body">
+          <div class="step-title">Listing PDA closed — rent returned</div>
+          <div class="step-desc">Anchor's <code>close = seller</code> constraint automatically closes the Listing PDA at the end of the instruction, returning its rent-exempt lamports to the seller.</div>
+          <div class="chips">
+            <span class="chip chip-green">close = seller</span>
+            <span class="chip chip-green">rent reclaimed</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note">
+      <strong>Security note:</strong> The SOL transfer uses direct lamport manipulation, which requires both buyer and seller accounts to be <code>mut</code>. The Listing PDA bump is stored on-chain so the program can re-derive and sign without user input, preventing seed collision attacks.
+    </div>
+  </div>
+
+  <!-- CANCEL -->
+  <div class="flow" id="flow-cancel">
+    <p class="flow-label">cancel_listing instruction — seller initiates</p>
+    <div class="participants">
+      <div class="participant">
+        <div class="participant-icon">👤</div>
+        <div class="participant-name">Seller</div>
+        <div class="participant-role">Signer (must match listing)</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">🔒</div>
+        <div class="participant-name">Escrow ATA</div>
+        <div class="participant-role">NFT currently held</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">🏦</div>
+        <div class="participant-name">Seller ATA</div>
+        <div class="participant-role">NFT returned here</div>
+      </div>
+      <div class="participant">
+        <div class="participant-icon">📋</div>
+        <div class="participant-name">Listing PDA</div>
+        <div class="participant-role">Closed on success</div>
+      </div>
+    </div>
+
+    <div class="steps">
+
+      <div class="step highlight-purple">
+        <div class="step-num num-purple">1</div>
+        <div class="step-body">
+          <div class="step-title">Seller signs cancel transaction</div>
+          <div class="step-desc">Only the original seller can cancel. The <code>has_one = seller</code> constraint on the Listing PDA enforces this automatically — no separate <code>require!</code> check needed.</div>
+          <div class="chips">
+            <span class="chip chip-purple">has_one = seller</span>
+            <span class="chip chip-purple">seeds verified</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector purple"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-cyan">
+        <div class="step-num num-cyan">2</div>
+        <div class="step-body">
+          <div class="step-title">Metaplex TransferV1 CPI — PDA signed</div>
+          <div class="step-desc">Same PDA-signed CPI pattern as buy_nft. The Listing PDA authorises moving the NFT out of the Escrow ATA back to the seller.</div>
+          <div class="chips">
+            <span class="chip chip-cyan">invoke_signed</span>
+            <span class="chip chip-cyan">Listing PDA as authority</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector cyan"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">3</div>
+        <div class="step-body">
+          <div class="step-title">NFT returned to Seller's ATA</div>
+          <div class="step-desc">Token moves from Escrow ATA → Seller ATA. Metaplex validates and updates all pNFT state (TokenRecord delegation cleared).</div>
+          <div class="chips">
+            <span class="chip chip-green">Escrow ATA → Seller ATA</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector green"><div class="arrow">↓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">4</div>
+        <div class="step-body">
+          <div class="step-title">Listing PDA closed — rent returned</div>
+          <div class="step-desc">The Listing PDA is closed via <code>close = seller</code>, returning all rent-exempt SOL to the seller. The on-chain listing record is fully removed.</div>
+          <div class="chips">
+            <span class="chip chip-green">close = seller</span>
+            <span class="chip chip-green">state fully cleaned up</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="note">
+      <strong>Important:</strong> The Escrow ATA (owned by the now-closed Listing PDA) should be closed separately or via an additional cleanup instruction to reclaim its rent. Consider adding <code>close = seller</code> to the escrow token account after the transfer.
+    </div>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="flow" id="flow-overview">
+    <p class="flow-label">Complete lifecycle — all paths</p>
+
+    <div class="steps">
+
+      <div class="step highlight-purple">
+        <div class="step-num num-purple">A</div>
+        <div class="step-body">
+          <div class="step-title">list_nft — NFT enters escrow</div>
+          <div class="step-desc">Seller → Listing PDA created. NFT moves Seller ATA → Escrow ATA via Metaplex TransferV1. Listing stores price, expiry, seller, mint, bump.</div>
+          <div class="chips">
+            <span class="chip chip-purple">SOL: seller pays rent</span>
+            <span class="chip chip-purple">NFT: seller → escrow</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector purple"><div class="arrow">↓</div></div>
+
+      <!-- Two paths -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+
+        <div>
+          <div class="step highlight-green" style="height:100%">
+            <div class="step-num num-green">B</div>
+            <div class="step-body">
+              <div class="step-title">buy_nft</div>
+              <div class="step-desc">Expiry checked. SOL flows Buyer → Seller. NFT flows Escrow → Buyer via signed CPI. Listing PDA closed, rent to seller.</div>
+              <div class="chips">
+                <span class="chip chip-amber">SOL: buyer → seller</span>
+                <span class="chip chip-green">NFT: escrow → buyer</span>
+                <span class="chip chip-green">PDA closed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="step highlight-red" style="height:100%">
+            <div class="step-num num-red">C</div>
+            <div class="step-body">
+              <div class="step-title">cancel_listing</div>
+              <div class="step-desc">Seller-only. NFT flows Escrow → Seller ATA via signed CPI. Listing PDA closed, rent to seller.</div>
+              <div class="chips">
+                <span class="chip chip-cyan">NFT: escrow → seller</span>
+                <span class="chip chip-green">PDA closed</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="connector green"><div class="arrow">✓</div></div>
+
+      <div class="step highlight-green">
+        <div class="step-num num-green">D</div>
+        <div class="step-body">
+          <div class="step-title">Final state — listing fully resolved</div>
+          <div class="step-desc">In both paths the Listing PDA is closed and all on-chain state is cleaned up. The NFT is held by exactly one party (buyer or seller) and the escrow ATA is empty.</div>
+          <div class="chips">
+            <span class="chip chip-green">Listing PDA: closed</span>
+            <span class="chip chip-green">Escrow ATA: 0 balance</span>
+            <span class="chip chip-green">Rent reclaimed</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="note">
+      <strong>Metaplex CPI chain:</strong> Your program → Token Metadata Program → SPL Token / Token-2022. The <code>sysvar_instructions</code> account is passed so Metaplex can detect nested CPI depth, which is used to enforce pNFT rules and prevent certain delegate/authority exploits. <strong>Token record accounts</strong> must be passed for pNFTs and can be <code>None</code> for standard NFTs — the same instruction handles both cases cleanly.
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+  function showFlow(name) {
+    document.querySelectorAll('.flow').forEach(f => f.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('flow-' + name).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+</body>
+</html>
