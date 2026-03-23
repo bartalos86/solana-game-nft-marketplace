@@ -4,18 +4,16 @@
  */
 
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import hardhat from "hardhat";
 import { network } from "hardhat";
+import { currentDeploymentsPath, loadPersistentDeployments, savePersistentDeployments } from "./utils/persistentDeployments.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type Hash = `0x${string}`;
-
-type ReceiptLog = { address: string; topics: (string | undefined)[] };
-type ReceiptWithLogs = { logs: ReceiptLog[] };
 
 type GameInput = {
   authority: Hash;
@@ -30,22 +28,41 @@ type GameInput = {
 
 type FactoryWithCreateGame = {
   address: string;
-  write: { createGame: (args: [GameInput, string, bigint]) => Promise<Hash> };
+  read: {
+    gameItems: () => Promise<Hash>;
+    getGameByAuthority: (args: [Hash]) => Promise<Hash>;
+    getGameData: (args: [Hash]) => Promise<{
+      authority: Hash;
+      name: string;
+      description: string;
+      imageUri: string;
+      uri: string;
+      category: string;
+      feeRecipient: Hash;
+      feePercentBps: number;
+      exists: boolean;
+    }>;
+  };
+  write: { createGame: (args: [GameInput]) => Promise<Hash> };
 };
 
 type CreateGameOpts = {
   name?: string;
-  symbol?: string;
   authority?: Hash;
-  royaltyBps?: bigint;
+  feePercentBps?: number;
 };
 
-type GameForSign = { address: string };
+type GameForSign = { address: Hash };
 
 type GameForMint = {
-  address: string;
+  address: Hash;
+  read: {
+    uri: (args: [bigint]) => Promise<string>;
+    balanceOf: (args: [Hash, bigint]) => Promise<bigint>;
+    tokenGameAuthority: (args: [bigint]) => Promise<Hash>;
+  };
   write: {
-    mintWithSignature: (args: [Hash, string, bigint, Hash]) => Promise<Hash>;
+    mintWithSignature: (args: [Hash, Hash, string, bigint, Hash]) => Promise<Hash>;
   };
 };
 
@@ -54,27 +71,34 @@ type GameForMint = {
 // ---------------------------------------------------------------------------
 
 const GAME_NAME = "Test Game";
-const GAME_SYMBOL = "TG";
-const ROYALTY_BPS = 550n;
 const GAME_DESCRIPTION = "Test game description";
 const GAME_CATEGORY = "Action";
+const GAME_FEE_BPS = 550;
+const EIP712_DOMAIN_NAME = "GameItemNFT";
+
+function isSepoliaRun(): boolean {
+  if ((process.env.HARDHAT_NETWORK ?? "").trim() === "sepolia") return true;
+  const networkFlagIndex = process.argv.findIndex((arg) => arg === "--network");
+  if (networkFlagIndex >= 0) {
+    return process.argv[networkFlagIndex + 1] === "sepolia";
+  }
+  return process.argv.some((arg) => arg === "--network=sepolia");
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function gameAddressFromReceipt(receipt: ReceiptWithLogs, factoryAddress: string): Hash {
-  const log = receipt.logs.find((l) => l.address.toLowerCase() === factoryAddress.toLowerCase());
-  assert.ok(log?.topics?.[1], "GameCreated event missing");
-  return `0x${log!.topics![1]!.slice(-40)}` as Hash;
-}
-
 describe("GameFactory & GameItemNFT", async function () {
   const { viem } = await network.connect();
   const publicClient = await viem.getPublicClient();
-  const [walletClient] = await viem.getWalletClients();
+  const walletClients = await viem.getWalletClients();
+  const walletClient = walletClients[0];
   const deployer = walletClient!.account!.address;
   const chainId = await publicClient.getChainId();
+  const isSepolia = isSepoliaRun();
+  let factory: FactoryWithCreateGame;
+  let factoryAddress: string;
 
   const reportGas = async (label: string, hash: Hash) => {
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -93,11 +117,31 @@ describe("GameFactory & GameItemNFT", async function () {
     return { address: receipt.contractAddress!, receipt };
   };
 
+  before(async () => {
+    if (isSepolia) {
+      const persisted = await loadPersistentDeployments("sepolia");
+      if (persisted?.gameFactory) {
+        factoryAddress = persisted.gameFactory;
+        factory = (await viem.getContractAt("GameFactory", factoryAddress as Hash)) as unknown as FactoryWithCreateGame;
+        console.log(`Reusing persisted factory from ${currentDeploymentsPath()}`);
+        return;
+      }
+    }
+
+    const deployed = await deployFactory();
+    factoryAddress = deployed.address;
+    factory = (await viem.getContractAt("GameFactory", factoryAddress as Hash)) as unknown as FactoryWithCreateGame;
+
+    if (isSepolia) {
+      await savePersistentDeployments("sepolia", Number(chainId), { gameFactory: factoryAddress as Hash });
+      console.log(`Saved factory deployment to ${currentDeploymentsPath()}`);
+    }
+  });
+
   const createGame = async (factory: FactoryWithCreateGame, opts: CreateGameOpts = {}) => {
     const name = opts.name ?? GAME_NAME;
-    const symbol = opts.symbol ?? GAME_SYMBOL;
     const authority = opts.authority ?? deployer;
-    const royaltyBps = opts.royaltyBps ?? ROYALTY_BPS;
+    const feePercentBps = opts.feePercentBps ?? GAME_FEE_BPS;
     const input: GameInput = {
       authority,
       name,
@@ -106,21 +150,35 @@ describe("GameFactory & GameItemNFT", async function () {
       uri: "",
       category: GAME_CATEGORY,
       feeRecipient: deployer,
-      feePercentBps: 0,
+      feePercentBps,
     };
-    const hash = await factory.write.createGame([input, symbol, royaltyBps]);
-    const receipt = await reportGas("createGame", hash);
-    const gameAddress = gameAddressFromReceipt(receipt, factory.address);
+    const hash = await factory.write.createGame([input]);
+    await reportGas("createGame", hash);
+    const gameAddress = await factory.read.gameItems();
     const game = await viem.getContractAt("GameItemNFT", gameAddress);
-    return { gameAddress, game, receipt };
+    return { gameAddress, game: game as unknown as GameForMint, input };
   };
 
-  const signMint = async (game: GameForSign, to: Hash, uri: string, nonce: bigint) => {
-    const domain = { name: GAME_NAME, version: "1", chainId, verifyingContract: game.address } as const;
+  const signMint = async (
+    game: GameForSign,
+    gameAuthority: Hash,
+    to: Hash,
+    uri: string,
+    amount: bigint,
+    nonce: bigint,
+  ) => {
+    const domain = {
+      name: EIP712_DOMAIN_NAME,
+      version: "1",
+      chainId,
+      verifyingContract: game.address,
+    } as const;
     const types = {
       Mint: [
+        { name: "gameAuthority", type: "address" },
         { name: "to", type: "address" },
         { name: "uri", type: "string" },
+        { name: "amount", type: "uint256" },
         { name: "nonce", type: "uint256" },
       ],
     } as const;
@@ -129,79 +187,98 @@ describe("GameFactory & GameItemNFT", async function () {
       domain,
       types,
       primaryType: "Mint",
-      message: { to, uri, nonce },
+      message: { gameAuthority, to, uri, amount, nonce },
     });
   };
 
-  const mint = async (game: GameForMint, to: Hash, uri: string, nonce: bigint, label?: string) => {
-    const signature = await signMint(game, to, uri, nonce);
-    const hash = await game.write.mintWithSignature([to, uri, nonce, signature as Hash]);
+  const mint = async (
+    game: GameForMint,
+    gameAuthority: Hash,
+    to: Hash,
+    uri: string,
+    nonce: bigint,
+    label?: string,
+  ) => {
+    const signature = await signMint(game, gameAuthority, to, uri, 1n, nonce);
+    const hash = await game.write.mintWithSignature([gameAuthority, to, uri, nonce, signature as Hash]);
     return reportGas(label ?? "mintWithSignature", hash);
   };
 
   it("deploys GameFactory and reports deployment gas", async function () {
-    const { address } = await deployFactory();
-    assert.ok(address);
-    console.log(`  GameFactory at: ${address}`);
+    assert.ok(factoryAddress);
+    console.log(`  GameFactory at: ${factoryAddress}`);
   });
 
   it("creates a game and reports createGame gas", async function () {
-    const factory = await viem.deployContract("GameFactory");
-    const { game, gameAddress } = await createGame(factory);
+    const { gameAddress, input } = await createGame(factory);
     assert.ok(gameAddress);
-    assert.equal(await game.read.name(), GAME_NAME);
-    assert.equal(await game.read.symbol(), GAME_SYMBOL);
-    assert.equal((await game.read.authority()).toLowerCase(), deployer.toLowerCase());
-    assert.equal((await game.read.owner()).toLowerCase(), deployer.toLowerCase());
+    assert.equal((await factory.read.gameItems()).toLowerCase(), gameAddress.toLowerCase());
+    assert.equal((await factory.read.getGameByAuthority([input.authority])).toLowerCase(), gameAddress.toLowerCase());
+
+    const gameData = await factory.read.getGameData([input.authority]);
+    assert.equal(gameData.exists, true);
+    assert.equal(gameData.name, input.name);
+    assert.equal(gameData.feePercentBps, input.feePercentBps);
   });
 
   it("creates multiple games from one factory", async function () {
-    const factory = await viem.deployContract("GameFactory");
-    const { game: game0 } = await createGame(factory, { name: "Game A", symbol: "GA" });
-    const { game: game1 } = await createGame(factory, { name: "Game B", symbol: "GB" });
-    assert.equal(await game0.read.name(), "Game A");
-    assert.equal(await game1.read.name(), "Game B");
-    assert.notEqual(game0.address, game1.address);
+    const authorityA = deployer;
+    const authorityB = (walletClients[1]?.account?.address ?? "0x000000000000000000000000000000000000dEaD") as Hash;
+    const { gameAddress: game0 } = await createGame(factory, { name: "Game A", authority: authorityA });
+    const { gameAddress: game1 } = await createGame(factory, {
+      name: "Game B",
+      authority: authorityB,
+      feePercentBps: 1000,
+    });
+    assert.equal(game0.toLowerCase(), game1.toLowerCase());
   });
 
   it("mints one item with signature and reports gas", async function () {
-    const factory = await viem.deployContract("GameFactory");
     const { game } = await createGame(factory);
-    await mint(game, deployer, "ipfs://QmFirst", 0n, "mintWithSignature (first)");
-    assert.equal((await game.read.ownerOf([0n])).toLowerCase(), deployer.toLowerCase());
-    assert.equal(await game.read.tokenURI([0n]), "ipfs://QmFirst");
-    assert.equal(await game.read.balanceOf([deployer]), 1n);
+    await mint(game, deployer, deployer, "ipfs://QmFirst", 0n, "mintWithSignature (first)");
+    assert.equal(await game.read.uri([0n]), "ipfs://QmFirst");
+    assert.equal(await game.read.balanceOf([deployer, 0n]), 1n);
+    assert.equal((await game.read.tokenGameAuthority([0n])).toLowerCase(), deployer.toLowerCase());
   });
 
   it("mints multiple items and reports gas per mint", async function () {
-    const factory = await viem.deployContract("GameFactory");
     const { game } = await createGame(factory);
     for (let i = 0; i < 3; i++) {
-      await mint(game, deployer, `ipfs://QmItem${i}`, BigInt(i), `mintWithSignature #${i}`);
+      await mint(game, deployer, deployer, `ipfs://QmItem${i}`, BigInt(i), `mintWithSignature #${i}`);
     }
-    assert.equal(await game.read.balanceOf([deployer]), 3n);
+    assert.equal(await game.read.balanceOf([deployer, 0n]), 1n);
+    assert.equal(await game.read.balanceOf([deployer, 1n]), 1n);
+    assert.equal(await game.read.balanceOf([deployer, 2n]), 1n);
   });
 
   it("reverts when reusing the same mint signature", async function () {
-    const factory = await viem.deployContract("GameFactory");
     const { game } = await createGame(factory);
     const uri = "ipfs://QmReplay";
     const nonce = 99n;
-    await mint(game, deployer, uri, nonce);
-    const signature = await signMint(game, deployer, uri, nonce);
+    await mint(game, deployer, deployer, uri, nonce);
+    const signature = await signMint(game, deployer, deployer, uri, 1n, nonce);
     await assert.rejects(
-      () => game.write.mintWithSignature([deployer, uri, nonce, signature as Hash]),
+      () => game.write.mintWithSignature([deployer, deployer, uri, nonce, signature as Hash]),
       /Signature already used|revert/,
     );
   });
 
   it("reverts when mint signature has wrong nonce", async function () {
-    const factory = await viem.deployContract("GameFactory");
     const { game } = await createGame(factory);
-    const signature = await signMint(game, deployer, "ipfs://QmWrongNonce", 999n);
+    const signature = await signMint(game, deployer, deployer, "ipfs://QmWrongNonce", 1n, 999n);
     await assert.rejects(
-      () => game.write.mintWithSignature([deployer, "ipfs://QmWrongNonce", 0n, signature as Hash]),
+      () => game.write.mintWithSignature([deployer, deployer, "ipfs://QmWrongNonce", 0n, signature as Hash]),
       /Invalid signature|revert/,
+    );
+  });
+
+  it("reverts when game authority is not registered", async function () {
+    const { game } = await createGame(factory);
+    const unknownAuthority = "0x000000000000000000000000000000000000dEaD" as Hash;
+    const signature = await signMint(game, unknownAuthority, deployer, "ipfs://QmInvalidGame", 1n, 7n);
+    await assert.rejects(
+      () => game.write.mintWithSignature([unknownAuthority, deployer, "ipfs://QmInvalidGame", 7n, signature as Hash]),
+      /InvalidGame|revert/,
     );
   });
 });

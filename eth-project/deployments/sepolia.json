@@ -1,0 +1,7 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "updatedAt": "2026-03-23T14:39:15.686Z",
+  "marketplace": "0x46b7a3ba04c4737f8da3230f241b80d53876e879",
+  "gameFactory": "0xee0faee9073855c44c98b7c30f3426459256bf5b"
+}

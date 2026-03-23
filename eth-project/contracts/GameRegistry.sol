@@ -98,7 +98,7 @@ contract GameRegistry {
     /**
      * Register a game. One game per authority.
      */
-    function registerGame(GameInput calldata input) external onlyPlatformAuthority {
+    function registerGame(GameInput calldata input) public onlyPlatformAuthority {
         if (games[input.authority].exists) revert GameAlreadyRegistered();
         _validateLengths(input.name, input.description, input.imageUri, input.uri, input.category);
         if (input.feePercentBps > FEE_PERCENT_MAX) revert FeePercentTooHigh();
@@ -122,7 +122,7 @@ contract GameRegistry {
      * empty string to clear). For feeRecipient, pass address(0) to keep current.
      * For feePercentBps, pass a value > FEE_PERCENT_MAX (e.g. 0xFFFF) to keep current.
      */
-    function updateGame(GameInput calldata input) external onlyPlatformAuthority {
+    function updateGame(GameInput calldata input) public onlyPlatformAuthority {
         Game storage game = games[input.authority];
         if (!game.exists) revert GameNotFound();
         _validateLengths(input.name, input.description, input.imageUri, input.uri, input.category);
@@ -159,7 +159,7 @@ contract GameRegistry {
     /**
      * Remove a game (clears storage, same idea as Solana close).
      */
-    function removeGame(address authority) external onlyPlatformAuthority {
+    function removeGame(address authority) public onlyPlatformAuthority {
         if (!games[authority].exists) revert GameNotFound();
         delete games[authority];
         emit GameRemoved(authority);
@@ -175,5 +175,14 @@ contract GameRegistry {
 
     function isGameRegistered(address authority) external view returns (bool) {
         return games[authority].exists;
+    }
+
+    function getGameRoyaltyConfig(address authority)
+        external
+        view
+        returns (bool exists, address feeRecipient, uint16 feePercentBps)
+    {
+        Game storage game = games[authority];
+        return (game.exists, game.feeRecipient, game.feePercentBps);
     }
 }

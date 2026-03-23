@@ -1,50 +1,52 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Royalty.sol";
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "./GameRegistry.sol";
 
 contract GameItemNFT is
-    ERC721URIStorage,
-    ERC721Royalty,
+    ERC1155,
+    ERC2981,
     Ownable,
     EIP712
 {
     using ECDSA for bytes32;
+    string private constant SIGNING_DOMAIN_NAME = "GameItemNFT";
 
     uint256 private _nextTokenId;
-    address public authority;
+    GameRegistry public immutable registry;
 
     // Prevent replay attacks
     mapping(bytes32 => bool) public usedDigests;
+    mapping(uint256 => string) private _tokenURIs;
+    mapping(uint256 => address) public tokenGameAuthority;
 
     // EIP-712 typehash
     bytes32 private constant MINT_TYPEHASH =
         keccak256(
-            "Mint(address to,string uri,uint256 nonce)"
+            "Mint(address gameAuthority,address to,string uri,uint256 amount,uint256 nonce)"
         );
+
+    error InvalidGame();
 
     event ItemMinted(
         uint256 indexed tokenId,
+        address indexed gameAuthority,
         address indexed to,
+        uint256 amount,
         string uri
     );
 
-    constructor(
-        string memory name_,
-        string memory symbol_,
-        address gameAuthority,
-        uint96 royaltyBps
-    )
-        ERC721(name_, symbol_)
-        Ownable(gameAuthority)
-        EIP712(name_, "1")
+    constructor(address registryAddress)
+        ERC1155("")
+        Ownable(registryAddress)
+        EIP712(SIGNING_DOMAIN_NAME, "1")
     {
-        _setDefaultRoyalty(gameAuthority, royaltyBps);
-        authority = gameAuthority;
+        registry = GameRegistry(registryAddress);
     }
 
     /**
@@ -56,64 +58,93 @@ contract GameItemNFT is
      *   nonce
      */
     function mintWithSignature(
+        address gameAuthority,
         address to,
-        string calldata uri,
+        string calldata tokenUri,
         uint256 nonce,
         bytes calldata signature
     ) external returns (uint256) {
+        return _mintWithSignature(gameAuthority, to, tokenUri, 1, nonce, signature);
+    }
 
+    function _mintWithSignature(
+        address gameAuthority,
+        address to,
+        string calldata tokenUri,
+        uint256 amount,
+        uint256 nonce,
+        bytes calldata signature
+    ) internal returns (uint256) {
+        require(amount > 0, "Amount must be > 0");
+        (bool exists, address feeRecipient, uint16 feePercentBps) =
+            registry.getGameRoyaltyConfig(gameAuthority);
+        if (!exists) revert InvalidGame();
+
+        _validateAndConsumeSignature(
+            gameAuthority,
+            to,
+            tokenUri,
+            amount,
+            nonce,
+            signature
+        );
+
+        uint256 tokenId = _nextTokenId++;
+        _tokenURIs[tokenId] = tokenUri;
+        tokenGameAuthority[tokenId] = gameAuthority;
+        _setTokenRoyalty(tokenId, feeRecipient, feePercentBps);
+        _mint(to, tokenId, amount, "");
+
+        emit URI(tokenUri, tokenId);
+        emit ItemMinted(tokenId, gameAuthority, to, amount, tokenUri);
+
+        return tokenId;
+    }
+
+    function _validateAndConsumeSignature(
+        address gameAuthority,
+        address to,
+        string calldata tokenUri,
+        uint256 amount,
+        uint256 nonce,
+        bytes calldata signature
+    ) internal {
         bytes32 structHash = keccak256(
             abi.encode(
                 MINT_TYPEHASH,
+                gameAuthority,
                 to,
-                keccak256(bytes(uri)),
+                keccak256(bytes(tokenUri)),
+                amount,
                 nonce
             )
         );
 
         bytes32 digest = _hashTypedDataV4(structHash);
-
         require(!usedDigests[digest], "Signature already used");
 
         address signer = ECDSA.recover(digest, signature);
-        require(signer == owner(), "Invalid signature");
-
+        require(signer == gameAuthority, "Invalid signature");
         usedDigests[digest] = true;
-
-        uint256 tokenId = _nextTokenId++;
-        _safeMint(to, tokenId);
-        _setTokenURI(tokenId, uri);
-
-        emit ItemMinted(tokenId, to, uri);
-
-        return tokenId;
     }
 
-    // Required overrides
-
-    function tokenURI(uint256 tokenId)
+    function uri(uint256 tokenId)
         public
         view
-        override(ERC721, ERC721URIStorage)
+        override
         returns (string memory)
     {
-        return super.tokenURI(tokenId);
+        string memory value = _tokenURIs[tokenId];
+        require(bytes(value).length > 0, "URI query for nonexistent token");
+        return value;
     }
 
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC721URIStorage, ERC721Royalty)
+        override(ERC1155, ERC2981)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
-    }
-
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override(ERC721)
-        returns (address)
-    {
-        return super._update(to, tokenId, auth);
     }
 }

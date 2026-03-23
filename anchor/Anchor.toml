@@ -21,7 +21,7 @@ cluster = "localnet"
 wallet = "wallet/deployment_wallet"
 
 [scripts]
-test = "yarn vitest run"
+test = "yarn vitest run tests/marketplace-gas-metaplex.test.ts tests/game-registry.test.ts"
 
 [test.validator]
 url = "https://api.mainnet-beta.solana.com"

@@ -5,29 +5,31 @@ import "./GameItemNFT.sol";
 import "./GameRegistry.sol";
 
 /**
- * Combined game registry + factory for Ethereum.
+ * Combined game registry + shared collection manager for Ethereum.
  *
  * - Inherits on-chain game metadata registry from GameRegistry
- * - Deploys a dedicated GameItemNFT contract per registered game
+ * - Deploys one shared ERC-1155 collection contract
+ * - All items are minted in that single contract and categorized by game authority
  * - Only the platform authority (set at deployment) can create/update/remove games
  */
 contract GameFactory is GameRegistry {
-    /// All deployed game NFT contracts.
-    GameItemNFT[] public gameContracts;
+    /// Shared collection for all registered games.
+    GameItemNFT public immutable gameItems;
 
     event GameCreated(
         address indexed gameContract,
         address indexed authority,
-        string name,
-        string symbol
+        string name
     );
 
     /// Platform authority is the deployer (mirrors Solana's fixed PLATFORM_AUTHORITY).
-    constructor() GameRegistry(msg.sender) {}
+    constructor() GameRegistry(msg.sender) {
+        gameItems = new GameItemNFT(address(this));
+    }
 
     /**
      * Create a new game:
-     * - Deploys a GameItemNFT contract
+     * - Deploys a GameItemNFT collection contract (ERC-1155)
      * - Registers the game metadata in the inherited registry
      *
      * Reverts if:
@@ -35,52 +37,30 @@ contract GameFactory is GameRegistry {
      * - Any metadata validation in GameRegistry fails
      */
     function createGame(
-        GameInput calldata input,
-        string calldata symbol,
-        uint96 royaltyBps
+        GameInput calldata input
     ) external onlyPlatformAuthority returns (address) {
-        // Deploy the NFT collection for this game.
-        GameItemNFT game = new GameItemNFT(
-            input.name,
-            symbol,
-            input.authority,
-            royaltyBps
-        );
-
-        gameContracts.push(game);
-
         // Register metadata in the on-chain registry (will revert on invalid data).
-        GameRegistry(address(this)).registerGame(input);
+        registerGame(input);
 
         emit GameCreated(
-            address(game),
+            address(gameItems),
             input.authority,
-            input.name,
-            symbol
+            input.name
         );
 
-        return address(game);
-    }
-
-    /// Number of games created through this factory.
-    function gamesCount() external view returns (uint256) {
-        return gameContracts.length;
+        return address(gameItems);
     }
 
     /// Returns full game metadata for the given authority. Reverts if not registered.
     function getGameData(address authority) external view returns (Game memory) {
-        Game memory data = getGame(authority);
+        Game memory data = games[authority];
         if (!data.exists) revert GameNotFound();
         return data;
     }
 
-    /// Helper to find a game NFT contract by its authority.
+    /// Returns the shared game NFT contract if authority is registered.
     function getGameByAuthority(address authority) external view returns (GameItemNFT) {
-        for (uint256 i = 0; i < gameContracts.length; i++) {
-            if (gameContracts[i].authority() == authority) {
-                return gameContracts[i];
-            }
-        }
-        revert("Game not found");
+        if (!games[authority].exists) revert GameNotFound();
+        return gameItems;
     }
 }

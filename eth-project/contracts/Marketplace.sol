@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-contract NFTMarketplace is ReentrancyGuard {
+contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
 
     struct Listing {
         address seller;
         address nft;
         uint256 tokenId;
+        uint256 quantity;
         uint256 price;
         uint256 expiry;
     }
@@ -27,6 +29,7 @@ contract NFTMarketplace is ReentrancyGuard {
         address indexed seller,
         address indexed nft,
         uint256 tokenId,
+        uint256 quantity,
         uint256 price
     );
 
@@ -48,27 +51,32 @@ contract NFTMarketplace is ReentrancyGuard {
     function listNFT(
         address _nft,
         uint256 _tokenId,
+        uint256 _quantity,
         uint256 _price,
         uint256 _expiry
     ) external {
-
         require(_price > 0, "Price must be > 0");
+        require(_quantity > 0, "Quantity must be > 0");
         require(_expiry > block.timestamp, "Invalid expiry");
-
-        IERC721 nft = IERC721(_nft);
-
         require(
-            nft.ownerOf(_tokenId) == msg.sender,
-            "Not owner"
+            IERC165(_nft).supportsInterface(type(IERC1155).interfaceId),
+            "Not ERC1155"
         );
 
-        // Transfer NFT to escrow (this contract)
-        nft.transferFrom(msg.sender, address(this), _tokenId);
+        IERC1155 nft = IERC1155(_nft);
+        require(
+            nft.balanceOf(msg.sender, _tokenId) >= _quantity,
+            "Insufficient balance"
+        );
+
+        // Transfer ERC-1155 tokens to escrow.
+        nft.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
 
         listings[listingCounter] = Listing({
             seller: msg.sender,
             nft: _nft,
             tokenId: _tokenId,
+            quantity: _quantity,
             price: _price,
             expiry: _expiry
         });
@@ -78,6 +86,7 @@ contract NFTMarketplace is ReentrancyGuard {
             msg.sender,
             _nft,
             _tokenId,
+            _quantity,
             _price
         );
 
@@ -144,10 +153,12 @@ contract NFTMarketplace is ReentrancyGuard {
         // TRANSFER NFT TO BUYER
         // --------------------------
 
-        IERC721(listing.nft).transferFrom(
+        IERC1155(listing.nft).safeTransferFrom(
             address(this),
             msg.sender,
-            listing.tokenId
+            listing.tokenId,
+            listing.quantity,
+            ""
         );
 
         emit Purchased(_listingId, msg.sender);
@@ -167,10 +178,12 @@ contract NFTMarketplace is ReentrancyGuard {
 
         delete listings[_listingId];
 
-        IERC721(listing.nft).transferFrom(
+        IERC1155(listing.nft).safeTransferFrom(
             address(this),
             msg.sender,
-            listing.tokenId
+            listing.tokenId,
+            listing.quantity,
+            ""
         );
 
         emit Cancelled(_listingId);

@@ -2,6 +2,11 @@
   "name": "eth-project",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "deploy:persistent:sepolia": "pnpm exec hardhat run --network sepolia scripts/deploy-persistent-sepolia.ts",
+    "test:local": "pnpm exec hardhat test",
+    "test:sepolia": "pnpm exec hardhat test --network sepolia test/GameFactory.integration.ts test/Marketplace.integration.ts"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.7",
     "@nomicfoundation/hardhat-toolbox-viem": "^5.0.2",

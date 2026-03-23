@@ -252,7 +252,7 @@ describe("GameRegistry", async function () {
       this.skip();
       return;
     }
-    const registryAsOther = await viem.getContractAt("GameRegistry", registry.address, {
+    const registryAsOther = await viem.getContractAt("GameRegistry", registry.address as Hash, {
       walletClient: otherWallet,
     });
     await assert.rejects(
