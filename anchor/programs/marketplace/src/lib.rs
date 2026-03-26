@@ -8,7 +8,7 @@ use mpl_token_metadata::instructions::{
     TransferV1Cpi, TransferV1CpiAccounts, TransferV1InstructionArgs,
 };
 
-declare_id!("31vF6b8JkjfCU6nc5V8SpJC9QSxNyqfyKn5EAYRXjN1V");
+declare_id!("2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq");
 
 /// Marketplace fee in basis points (10000 = 100%). e.g. 250 = 2.5% — sent to static deployment address.
 pub const MARKETPLACE_FEE_BPS: u16 = 250;

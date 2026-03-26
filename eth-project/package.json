@@ -5,7 +5,8 @@
   "scripts": {
     "deploy:persistent:sepolia": "pnpm exec hardhat run --network sepolia scripts/deploy-persistent-sepolia.ts",
     "test:local": "pnpm exec hardhat test",
-    "test:sepolia": "pnpm exec hardhat test --network sepolia test/GameFactory.integration.ts test/Marketplace.integration.ts"
+    "test:sepolia": "pnpm exec hardhat test --network sepolia test/GameFactory.integration.ts test/Marketplace.integration.ts",
+    "measure:slither": "node scripts/measure-slither.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.7",
@@ -14,6 +15,7 @@
     "@types/node": "^22.19.11",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.1.9",
+    "solc": "^0.8.34",
     "typescript": "~5.8.3",
     "viem": "^2.46.2"
   },

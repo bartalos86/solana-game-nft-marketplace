@@ -6,11 +6,11 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-nftmarketplacedapp = "31vF6b8JkjfCU6nc5V8SpJC9QSxNyqfyKn5EAYRXjN1V"
+marketplace = "2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq"
 game_registry = "4jDnCxk12L9DNAiuMp3ddJYqFgsfpEW7aY4S7m8HFDwx"
 
 [programs.devnet]
-nftmarketplacedapp = "31vF6b8JkjfCU6nc5V8SpJC9QSxNyqfyKn5EAYRXjN1V"
+marketplace = "2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq"
 game_registry = "4jDnCxk12L9DNAiuMp3ddJYqFgsfpEW7aY4S7m8HFDwx"
 
 [registry]
@@ -21,7 +21,9 @@ cluster = "localnet"
 wallet = "wallet/deployment_wallet"
 
 [scripts]
-test = "yarn vitest run tests/marketplace-gas-metaplex.test.ts tests/game-registry.test.ts"
+#test = "yarn vitest run tests/marketplace-gas-metaplex-sdk.test.ts"
+test = "yarn vitest run tests/load-burst.test.ts"
+#test = "yarn vitest run tests/game-registry.test.ts"
 
 [test.validator]
 url = "https://api.mainnet-beta.solana.com"

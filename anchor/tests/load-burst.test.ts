@@ -41,8 +41,9 @@ const LOAD_LEVELS = [10, 50, 100, 500];
 const PRICE = new BN(0.01 * LAMPORTS_PER_SOL);
 const CU_LIMIT = 100_000_000;
 const BURST_COUNT = 5;
-const BURST_SIZE = 75;
+const BURST_SIZE = 200;
 const BURST_COOLDOWN_MS = 1200;
+const PARALLEL_TEST_TIMEOUT_MS = 45 * 60 * 1000;
 const BURST_TEST_TIMEOUT_MS = BURST_SIZE * 60 * 1000;
 const MINT_BURST_TEST_TIMEOUT_MS = BURST_TEST_TIMEOUT_MS;
 const RESULTS_DIR = path.resolve(process.cwd(), "benchmark-results");
@@ -199,8 +200,9 @@ describe("Solana marketplace load & burst", () => {
     const start = nowMs();
     try {
       const sig = await send();
+      const latencyMs = nowMs() - start;
       const cu = await cuOf(connection, sig);
-      return { ok: true, latencyMs: nowMs() - start, cu, label };
+      return { ok: true, latencyMs, cu, label };
     } catch (e: unknown) {
       return {
         ok: false,
@@ -378,41 +380,45 @@ describe("Solana marketplace load & burst", () => {
     });
   };
 
-  it("parallel load: 10/50/100 virtual clients for list/buy and mint", async () => {
-    const buyers = await Promise.all(
-      Array.from({ length: 110 }, async () => {
-        const kp = Keypair.generate();
-        await ensureMinBalance(connection, kp.publicKey, 5 * LAMPORTS_PER_SOL);
-        return kp;
-      }),
-    );
-
-    for (const clients of LOAD_LEVELS) {
-      const fixtures = await Promise.all(Array.from({ length: clients }, () => createNftFixture()));
-      const pairs = await Promise.all(
-        fixtures.map((fixture, i) => listAndBuy(fixture, buyers[i % buyers.length]!)),
+  it(
+    "parallel load: 10/50/100 virtual clients for list/buy and mint",
+    { timeout: PARALLEL_TEST_TIMEOUT_MS },
+    async () => {
+      const buyers = await Promise.all(
+        Array.from({ length: 110 }, async () => {
+          const kp = Keypair.generate();
+          await ensureMinBalance(connection, kp.publicKey, 5 * LAMPORTS_PER_SOL);
+          return kp;
+        }),
       );
-      const lists = pairs.map((p) => p.list);
-      const buys = pairs.map((p) => p.buy);
-      runSummaries.push(summarize(`sol_list_parallel_${clients}`, lists));
-      runSummaries.push(summarize(`sol_buy_parallel_${clients}`, buys));
-      assert.equal(lists.length, clients);
-      assert.equal(buys.length, clients);
 
-      const mintRows = await Promise.all(Array.from({ length: clients }, () => mintOne()));
-      runSummaries.push(summarize(`sol_mint_parallel_${clients}`, mintRows));
-      assert.equal(mintRows.length, clients);
+      for (const clients of LOAD_LEVELS) {
+        const fixtures = await Promise.all(Array.from({ length: clients }, () => createNftFixture()));
+        const pairs = await Promise.all(
+          fixtures.map((fixture, i) => listAndBuy(fixture, buyers[i % buyers.length]!)),
+        );
+        const lists = pairs.map((p) => p.list);
+        const buys = pairs.map((p) => p.buy);
+        runSummaries.push(summarize(`sol_list_parallel_${clients}`, lists));
+        runSummaries.push(summarize(`sol_buy_parallel_${clients}`, buys));
+        assert.equal(lists.length, clients);
+        assert.equal(buys.length, clients);
 
-      await writeJsonReport(`solana-parallel-${clients}-${runId}.json`, {
-        chain: "solana",
-        scenario: "parallel",
-        clients,
-        runId,
-        summaries: runSummaries.slice(-3),
-        rows: { lists, buys, mintRows },
-      });
-    }
-  });
+        const mintRows = await Promise.all(Array.from({ length: clients }, () => mintOne()));
+        runSummaries.push(summarize(`sol_mint_parallel_${clients}`, mintRows));
+        assert.equal(mintRows.length, clients);
+
+        await writeJsonReport(`solana-parallel-${clients}-${runId}.json`, {
+          chain: "solana",
+          scenario: "parallel",
+          clients,
+          runId,
+          summaries: runSummaries.slice(-3),
+          rows: { lists, buys, mintRows },
+        });
+      }
+    },
+  );
 
   it(
     "burst load: high pressure spikes",

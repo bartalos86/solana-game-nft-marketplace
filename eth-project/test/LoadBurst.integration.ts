@@ -76,7 +76,7 @@ const LISTING_PRICE = 1_000_000n;
 const LISTING_DURATION_SECONDS = 86400n;
 const LOAD_LEVELS = [10, 50, 100, 500];
 const BURST_COUNT = 5;
-const BURST_SIZE = 75;
+const BURST_SIZE = 200;
 const BURST_COOLDOWN_MS = 1200;
 const RESULTS_DIR = path.resolve(process.cwd(), "benchmark-results");
 
@@ -163,6 +163,15 @@ describe("ETH load & burst tests", async function () {
     try {
       const hash = await send();
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        return {
+          ok: false,
+          latencyMs: nowMs() - start,
+          gasUsed: receipt.gasUsed,
+          label,
+          error: `Transaction reverted (${label})`,
+        };
+      }
       return {
         ok: true,
         latencyMs: nowMs() - start,
@@ -191,6 +200,19 @@ describe("ETH load & burst tests", async function () {
     try {
       const hash = await send();
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status !== "success") {
+        return {
+          ok: false,
+          receipt: null,
+          metric: {
+            ok: false,
+            latencyMs: nowMs() - start,
+            gasUsed: receipt.gasUsed,
+            label,
+            error: `Transaction reverted (${label})`,
+          },
+        };
+      }
       return {
         ok: true,
         receipt,

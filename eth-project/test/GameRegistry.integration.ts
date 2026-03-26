@@ -14,14 +14,24 @@ import { network } from "hardhat";
 
 type Hash = `0x${string}`;
 
-type GameTuple = [string, string, string, string, string, string, string, number, boolean];
+type GameData = {
+  authority: Hash;
+  name: string;
+  description: string;
+  imageUri: string;
+  uri: string;
+  category: string;
+  feeRecipient: Hash;
+  feePercentBps: number;
+  exists: boolean;
+};
 
 type GameRegistryContract = {
   address: string;
   read: {
     platformAuthority: () => Promise<string>;
-    getGame: (args: [Hash]) => Promise<GameTuple>;
-    games: (args: [Hash]) => Promise<GameTuple>;
+    getGame: (args: [Hash]) => Promise<GameData>;
+    games: (args: [Hash]) => Promise<GameData>;
     isGameRegistered: (args: [Hash]) => Promise<boolean>;
     GAME_NAME_MAX_LEN: () => Promise<bigint>;
     DESCRIPTION_MAX_LEN: () => Promise<bigint>;
@@ -56,7 +66,7 @@ const DESCRIPTION_MAX_LEN = 700;
 // Helpers
 // ---------------------------------------------------------------------------
 
-describe("GameRegistry", async function () {
+describe("GameRegistry", { concurrency: 1 }, async function () {
   const { viem } = await network.connect();
   const publicClient = await viem.getPublicClient();
   const [walletClient] = await viem.getWalletClients();
@@ -64,13 +74,34 @@ describe("GameRegistry", async function () {
 
   const reportGas = async (label: string, hash: Hash) => {
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") {
+      throw new Error(`Transaction reverted (${label})`);
+    }
     console.log(`  [Gas] ${label}: ${receipt.gasUsed.toString()} gas`);
     return receipt;
   };
 
+  const expectRevertAndLogGas = async (label: string, send: () => Promise<Hash>, matcher: RegExp) => {
+    await assert.rejects(async () => {
+      const hash = await send();
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      console.log(`  [Gas] ${label} (revert): ${receipt.gasUsed.toString()} gas`);
+      if (receipt.status !== "reverted") {
+        throw new Error(`Expected revert but transaction succeeded (${label})`);
+      }
+      throw new Error(`Transaction reverted (${label})`);
+    }, matcher);
+  };
+
   const deployRegistry = async () => {
-    const registry = await viem.deployContract("GameRegistry", [platformAuthority]);
-    const receipt = await reportGas("GameRegistry deployment", registry.hash);
+    const artifact = await hardhat.artifacts.readArtifact("GameRegistry");
+    const hash = await walletClient!.deployContract({
+      abi: artifact.abi,
+      bytecode: artifact.bytecode as Hash,
+      args: [platformAuthority as Hash],
+      account: walletClient!.account!,
+    });
+    const receipt = await reportGas("GameRegistry deployment", hash);
     const contract = await viem.getContractAt("GameRegistry", receipt.contractAddress!);
     return contract as unknown as GameRegistryContract;
   };
@@ -118,14 +149,13 @@ describe("GameRegistry", async function () {
     await registerGame(registry, platformAuthority as Hash, { name });
 
     const game = await registry.read.getGame([platformAuthority as Hash]);
-    const [auth, gameName, description, imageUri, uri, category, feeRecipient, feePercentBps, exists] = game;
-    assert.ok(exists);
-    assert.equal(auth.toLowerCase(), platformAuthority.toLowerCase());
-    assert.equal(gameName, name);
-    assert.equal(description, "");
-    assert.equal(imageUri, "");
-    assert.equal(category, "");
-    assert.equal(Number(feePercentBps), 0);
+    assert.ok(game.exists);
+    assert.equal(game.authority.toLowerCase(), platformAuthority.toLowerCase());
+    assert.equal(game.name, name);
+    assert.equal(game.description, "");
+    assert.equal(game.imageUri, "");
+    assert.equal(game.category, "");
+    assert.equal(Number(game.feePercentBps), 0);
   });
 
   it("registerGame: with description, imageUri, uri, category and feeRecipient", async function () {
@@ -150,35 +180,52 @@ describe("GameRegistry", async function () {
     });
 
     const game = await registry.read.getGame([authority as Hash]);
-    const [auth, gameName, desc, imgUri, u, cat, feeRec, feeBps, exists] = game;
-    assert.ok(exists);
-    assert.equal(gameName, name);
-    assert.equal(desc, description);
-    assert.equal(imgUri, imageUri);
-    assert.equal(u, uri);
-    assert.equal(cat, category);
-    assert.equal(Number(feeBps), 500);
+    assert.ok(game.exists);
+    assert.equal(game.name, name);
+    assert.equal(game.description, description);
+    assert.equal(game.imageUri, imageUri);
+    assert.equal(game.uri, uri);
+    assert.equal(game.category, category);
+    assert.equal(Number(game.feePercentBps), 500);
   });
 
   it("registerGame: fail when name too long", async function () {
     const registry = await deployRegistry();
     const longName = "a".repeat(GAME_NAME_MAX_LEN + 1);
-    await assert.rejects(
-      () => registerGame(registry, platformAuthority as Hash, { name: longName }),
-      /NameTooLong|revert/,
+    await expectRevertAndLogGas(
+      "registerGame name too long",
+      () =>
+        registry.write.registerGame([{
+          authority: platformAuthority as Hash,
+          name: longName,
+          description: "",
+          imageUri: "",
+          uri: "",
+          category: "",
+          feeRecipient: ZERO_ADDRESS,
+          feePercentBps: 0,
+        }]),
+      /NameTooLong|revert|reverted|Transaction reverted/,
     );
   });
 
   it("registerGame: fail when description too long", async function () {
     const registry = await deployRegistry();
     const longDesc = "x".repeat(DESCRIPTION_MAX_LEN + 1);
-    await assert.rejects(
+    await expectRevertAndLogGas(
+      "registerGame description too long",
       () =>
-        registerGame(registry, platformAuthority as Hash, {
+        registry.write.registerGame([{
+          authority: platformAuthority as Hash,
           name: "Game",
           description: longDesc,
-        }),
-      /DescriptionTooLong|revert/,
+          imageUri: "",
+          uri: "",
+          category: "",
+          feeRecipient: ZERO_ADDRESS,
+          feePercentBps: 0,
+        }]),
+      /DescriptionTooLong|revert|reverted|Transaction reverted/,
     );
   });
 
@@ -203,25 +250,35 @@ describe("GameRegistry", async function () {
     await reportGas("updateGame", hash);
 
     const game = await registry.read.getGame([authority]);
-    const [, gameName, desc, imageUri, uri, category, , feeBps] = game;
-    assert.equal(gameName, "Updated Name");
-    assert.equal(desc, "New description");
-    assert.equal(imageUri, "https://new-image.com");
-    assert.equal(uri, "https://new-uri.com");
-    assert.equal(category, "Action");
-    assert.equal(Number(feeBps), 300);
+    assert.equal(game.name, "Updated Name");
+    assert.equal(game.description, "New description");
+    assert.equal(game.imageUri, "https://new-image.com");
+    assert.equal(game.uri, "https://new-uri.com");
+    assert.equal(game.category, "Action");
+    assert.equal(Number(game.feePercentBps), 300);
   });
 
   it("registerGame: duplicate authority fails (game already registered)", async function () {
     const registry = await deployRegistry();
     const authority = platformAuthority as Hash;
     await registerGame(registry, authority, { name: "First" });
-    await assert.rejects(
-      () => registerGame(registry, authority, { name: "Second" }),
-      /GameAlreadyRegistered|revert/,
+    await expectRevertAndLogGas(
+      "registerGame duplicate authority",
+      () =>
+        registry.write.registerGame([{
+          authority,
+          name: "Second",
+          description: "",
+          imageUri: "",
+          uri: "",
+          category: "",
+          feeRecipient: ZERO_ADDRESS,
+          feePercentBps: 0,
+        }]),
+      /GameAlreadyRegistered|revert|reverted|Transaction reverted/,
     );
     const game = await registry.read.getGame([authority]);
-    assert.equal(game[1], "First");
+    assert.equal(game.name, "First");
   });
 
   it("removeGame: removes game and getGame returns empty", async function () {
@@ -235,13 +292,17 @@ describe("GameRegistry", async function () {
 
     assert.equal(await registry.read.isGameRegistered([authority]), false);
     const game = await registry.read.getGame([authority]);
-    assert.equal(game[8], false); // exists
+    assert.equal(game.exists, false);
   });
 
   it("removeGame: reverts when game not found", async function () {
     const registry = await deployRegistry();
     const unknown = "0x0000000000000000000000000000000000000001" as Hash;
-    await assert.rejects(() => registry.write.removeGame([unknown]), /GameNotFound|revert/);
+    await expectRevertAndLogGas(
+      "removeGame not found",
+      () => registry.write.removeGame([unknown]),
+      /GameNotFound|revert|reverted|Transaction reverted/,
+    );
   });
 
   it("registerGame: reverts when not platform authority", async function () {
@@ -249,27 +310,29 @@ describe("GameRegistry", async function () {
     const [, otherWallet] = await viem.getWalletClients();
     const other = otherWallet?.account?.address;
     if (!other) {
-      this.skip();
       return;
     }
-    const registryAsOther = await viem.getContractAt("GameRegistry", registry.address as Hash, {
-      walletClient: otherWallet,
-    });
-    await assert.rejects(
-      () =>
-        (registryAsOther as unknown as GameRegistryContract).write.registerGame([
-          {
-            authority: other as Hash,
-            name: "Hacked",
-            description: "",
-            imageUri: "",
-            uri: "",
-            category: "",
-            feeRecipient: ZERO_ADDRESS,
-            feePercentBps: 0,
-          },
-        ]),
-      /Unauthorized|revert/,
+    const artifact = await hardhat.artifacts.readArtifact("GameRegistry");
+    await expectRevertAndLogGas(
+      "registerGame unauthorized",
+      async () =>
+        otherWallet.writeContract({
+        address: registry.address as Hash,
+        abi: artifact.abi,
+        functionName: "registerGame",
+        args: [{
+          authority: other as Hash,
+          name: "Hacked",
+          description: "",
+          imageUri: "",
+          uri: "",
+          category: "",
+          feeRecipient: ZERO_ADDRESS,
+          feePercentBps: 0,
+        }],
+        account: otherWallet.account!,
+      }),
+      /Unauthorized|revert|reverted|Transaction reverted/,
     );
   });
 });

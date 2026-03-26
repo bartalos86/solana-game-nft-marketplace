@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test:load:local": "anchor test",
-    "test:load:devnet": "anchor test --provider.cluster devnet"
+    "test:devnet": "anchor test --provider.cluster devnet"
   },
   "devDependencies": {
     "@coral-xyz/anchor": "^0.30.1",

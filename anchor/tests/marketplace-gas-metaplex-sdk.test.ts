@@ -75,12 +75,15 @@ async function sendTx(
   payer: Keypair,
   signers: Keypair[] = [payer],
 ): Promise<string> {
+  const startedAt = Date.now()
   const tx = new Transaction().add(...ixs)
   tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash
   tx.feePayer = payer.publicKey
   tx.sign(...signers)
   const sig = await connection.sendRawTransaction(tx.serialize())
   await connection.confirmTransaction(sig, "confirmed")
+  const latencyMs = Date.now() - startedAt
+  console.log(`[Latency] sendTx: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
   return sig
 }
 
@@ -89,7 +92,41 @@ async function cuOf(connection: anchor.web3.Connection, sig: string): Promise<nu
     commitment: "confirmed",
     maxSupportedTransactionVersion: 0,
   })
-  return info?.meta?.computeUnitsConsumed ?? 0
+  const fromMeta = info?.meta?.computeUnitsConsumed
+  if (typeof fromMeta === "number" && fromMeta > 0) return fromMeta
+  return extractConsumedCuFromLogs(info?.meta?.logMessages) ?? 0
+}
+
+function extractConsumedCuFromLogs(logs: string[] | null | undefined): number | null {
+  if (!logs || logs.length === 0) return null
+  for (const line of logs) {
+    const match = line.match(/consumed\s+(\d+)\s+of\s+\d+\s+compute units/i)
+    if (match?.[1]) return Number(match[1])
+  }
+  return null
+}
+
+async function requestAirdropWithRetry(
+  connection: anchor.web3.Connection,
+  pubkey: PublicKey,
+  lamports: number,
+  maxAttempts: number = 5,
+): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const sig = await connection.requestAirdrop(pubkey, lamports)
+      await connection.confirmTransaction(sig, "confirmed")
+      return
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const isRateLimited = msg.includes("429") || msg.includes("Too Many Requests")
+      if (!isRateLimited || attempt === maxAttempts - 1) {
+        throw e
+      }
+      const backoffMs = 1000 * 2 ** attempt
+      await new Promise((r) => setTimeout(r, backoffMs))
+    }
+  }
 }
 
 /** Send a UMI-built transaction (with optional compute limit) and return signature */
@@ -110,23 +147,9 @@ async function sendUmiTx(
 }
 
 async function createFundedWallet(connection: anchor.web3.Connection, amountSol: number = 1): Promise<Keypair> {
-  const wallet = Keypair.generate();
-
-  // 1. Ask the local network for free SOL
-  const airdropSig = await connection.requestAirdrop(
-    wallet.publicKey,
-    amountSol * LAMPORTS_PER_SOL
-  );
-
-  // 2. Wait for the network to confirm the money arrived
-  const latestBlockHash = await connection.getLatestBlockhash();
-  await connection.confirmTransaction({
-    blockhash: latestBlockHash.blockhash,
-    lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-    signature: airdropSig,
-  });
-
-  return wallet;
+  const wallet = Keypair.generate()
+  await requestAirdropWithRetry(connection, wallet.publicKey, amountSol * LAMPORTS_PER_SOL)
+  return wallet
 }
 
 // ── NFT fixture ─────────────────────────────────────────────────────────────
@@ -152,12 +175,39 @@ describe("NFT Marketplace — compute units (Metaplex SDK)", () => {
   const EXPIRY = new BN(Math.floor(Date.now() / 1000) + 7 * 24 * 3600)
   const PRICE = new BN(0.01 * LAMPORTS_PER_SOL)
   const CU_LIMIT = 100_000_000
+  const MARKETPLACE_FEE_RECIPIENT = new PublicKey("5GLPnCWkDniHq4B7o7K5fsxRKf4xpprX2ENngRs4VGeB")
+
+  beforeAll(async () => {
+    const minBalance = 2 * LAMPORTS_PER_SOL
+    let balance = await connection.getBalance(payer.publicKey)
+    if (balance < minBalance) {
+      await requestAirdropWithRetry(connection, payer.publicKey, 3 * LAMPORTS_PER_SOL)
+      balance = await connection.getBalance(payer.publicKey)
+    }
+    if (balance < minBalance) {
+      throw new Error("Payer balance still too low after airdrop")
+    }
+
+    const feeRecipientMin = 0.2 * LAMPORTS_PER_SOL
+    const feeRecipientBalance = await connection.getBalance(MARKETPLACE_FEE_RECIPIENT)
+    if (feeRecipientBalance < feeRecipientMin) {
+      await requestAirdropWithRetry(connection, MARKETPLACE_FEE_RECIPIENT, 1 * LAMPORTS_PER_SOL)
+    }
+  })
 
   /** Umi instance bound to current connection and payer */
   function getUmi() {
     const umi = createUmi(connection).use(mplTokenMetadata())
     const signer = createSignerFromKeypair(umi, fromWeb3JsKeypair(payer))
     return umi.use(signerIdentity(signer)).use(signerPayer(signer))
+  }
+
+  async function timedRpc(label: string, rpcCall: () => Promise<string>): Promise<string> {
+    const startedAt = Date.now()
+    const sig = await rpcCall()
+    const latencyMs = Date.now() - startedAt
+    console.log(`[Latency] ${label}: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
+    return sig
   }
 
   async function createNftFixture(): Promise<NftFixture> {
@@ -211,19 +261,21 @@ describe("NFT Marketplace — compute units (Metaplex SDK)", () => {
   it("list_nft: consume ≤ CU_LIMIT compute units", async () => {
     const { mint, metadata, masterEdition } = await createNftFixture()
 
-    const sig = await program.methods
-      .listNft(PRICE, EXPIRY)
-      .accounts({
-        seller: payer.publicKey,
-        mint,
-        metadata,
-        masterEdition,
-        sellerTokenRecord: null,
-        escrowTokenRecord: null,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
-      .rpc({ commitment: "confirmed" })
+    const sig = await timedRpc("list_nft", () =>
+      program.methods
+        .listNft(PRICE, EXPIRY)
+        .accounts({
+          seller: payer.publicKey,
+          mint,
+          metadata,
+          masterEdition,
+          sellerTokenRecord: null,
+          escrowTokenRecord: null,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
+        .rpc({ commitment: "confirmed" }),
+    )
 
     const cu = await cuOf(connection, sig)
     console.log("list_nft CU (SDK fixture):", cu)
@@ -234,41 +286,40 @@ describe("NFT Marketplace — compute units (Metaplex SDK)", () => {
   it("buy_nft: consume ≤ CU_LIMIT compute units", async () => {
     const { mint, listingPda, metadata, masterEdition } = await createNftFixture()
 
-    const MARKETPLACE_FEE_RECIPIENT = new PublicKey("5GLPnCWkDniHq4B7o7K5fsxRKf4xpprX2ENngRs4VGeB")
-
-    await connection.requestAirdrop(MARKETPLACE_FEE_RECIPIENT, 1 * LAMPORTS_PER_SOL);
-
-    await program.methods
-      .listNft(PRICE, EXPIRY)
-      .accounts({
-        seller: payer.publicKey,
-        mint,
-        metadata,
-        masterEdition,
-        sellerTokenRecord: null,
-        escrowTokenRecord: null,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc({ commitment: "confirmed" })
+    await timedRpc("list_nft (setup for buy_nft)", () =>
+      program.methods
+        .listNft(PRICE, EXPIRY)
+        .accounts({
+          seller: payer.publicKey,
+          mint,
+          metadata,
+          masterEdition,
+          sellerTokenRecord: null,
+          escrowTokenRecord: null,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc({ commitment: "confirmed" }),
+    )
 
     // Marketplace fee → static address (must match MARKETPLACE_FEE_RECIPIENT in program); update authority fee → NFT creator (payer).
-    const sig = await program.methods
-      .buyNft()
-      .accounts({
-        buyer: payer.publicKey,
-        seller: payer.publicKey,
-        marketplaceFeeRecipient: MARKETPLACE_FEE_RECIPIENT,
-        updateAuthorityFeeRecipient: payer.publicKey,
-        mint,
-        listing: listingPda,
-        metadata,
-        masterEdition,
-        escrowTokenRecord: null,
-        buyerTokenRecord: null,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
-      .rpc({ commitment: "confirmed" })
+    const sig = await timedRpc("buy_nft", () =>
+      program.methods
+        .buyNft()
+        .accounts({
+          buyer: payer.publicKey,
+          seller: payer.publicKey,
+          updateAuthorityFeeRecipient: payer.publicKey,
+          mint,
+          listing: listingPda,
+          metadata,
+          masterEdition,
+          escrowTokenRecord: null,
+          buyerTokenRecord: null,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
+        .rpc({ commitment: "confirmed" }),
+    )
 
     const cu = await cuOf(connection, sig)
     console.log("buy_nft CU (SDK fixture):", cu)
@@ -279,33 +330,36 @@ describe("NFT Marketplace — compute units (Metaplex SDK)", () => {
   it("cancel_listing: consume ≤ CU_LIMIT compute units", async () => {
     const { mint, listingPda, metadata, masterEdition } = await createNftFixture()
 
-    await program.methods
-      .listNft(PRICE, EXPIRY)
-      .accounts({
-        seller: payer.publicKey,
-        mint,
-        metadata,
-        masterEdition,
-        sellerTokenRecord: null,
-        escrowTokenRecord: null,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc({ commitment: "confirmed" })
+    await timedRpc("list_nft (setup for cancel_listing)", () =>
+      program.methods
+        .listNft(PRICE, EXPIRY)
+        .accounts({
+          seller: payer.publicKey,
+          mint,
+          metadata,
+          masterEdition,
+          sellerTokenRecord: null,
+          escrowTokenRecord: null,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc({ commitment: "confirmed" }),
+    )
 
-    const sig = await program.methods
-      .cancelListing()
-      .accounts({
-        seller: payer.publicKey,
-        mint,
-        listing: listingPda,
-        metadata,
-        masterEdition,
-        escrowTokenRecord: null,
-        sellerTokenRecord: null,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
-      .rpc({ commitment: "confirmed" })
+    const sig = await timedRpc("cancel_listing", () =>
+      program.methods
+        .cancelListing()
+        .accounts({
+          mint,
+          listing: listingPda,
+          metadata,
+          masterEdition,
+          escrowTokenRecord: null,
+          sellerTokenRecord: null,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        } as any)
+        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
+        .rpc({ commitment: "confirmed" }),
+    )
 
     const cu = await cuOf(connection, sig)
     console.log("cancel_listing CU (SDK fixture):", cu)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/ERC1155/extensions/ERC1155URIStorage.sol";
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./GameRegistry.sol";
 
 contract GameItemNFT is
-    ERC1155,
+    ERC1155URIStorage,
     ERC2981,
     Ownable,
     EIP712
@@ -22,7 +22,6 @@ contract GameItemNFT is
 
     // Prevent replay attacks
     mapping(bytes32 => bool) public usedDigests;
-    mapping(uint256 => string) private _tokenURIs;
     mapping(uint256 => address) public tokenGameAuthority;
 
     // EIP-712 typehash
@@ -90,12 +89,10 @@ contract GameItemNFT is
         );
 
         uint256 tokenId = _nextTokenId++;
-        _tokenURIs[tokenId] = tokenUri;
+        _setURI(tokenId, tokenUri);
         tokenGameAuthority[tokenId] = gameAuthority;
         _setTokenRoyalty(tokenId, feeRecipient, feePercentBps);
         _mint(to, tokenId, amount, "");
-
-        emit URI(tokenUri, tokenId);
         emit ItemMinted(tokenId, gameAuthority, to, amount, tokenUri);
 
         return tokenId;
@@ -126,17 +123,6 @@ contract GameItemNFT is
         address signer = ECDSA.recover(digest, signature);
         require(signer == gameAuthority, "Invalid signature");
         usedDigests[digest] = true;
-    }
-
-    function uri(uint256 tokenId)
-        public
-        view
-        override
-        returns (string memory)
-    {
-        string memory value = _tokenURIs[tokenId];
-        require(bytes(value).length > 0, "URI query for nonexistent token");
-        return value;
     }
 
     function supportsInterface(bytes4 interfaceId)

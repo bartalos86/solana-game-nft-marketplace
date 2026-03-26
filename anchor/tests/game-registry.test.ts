@@ -23,6 +23,53 @@ async function cuOf(connection: anchor.web3.Connection, sig: string): Promise<nu
   return info?.meta?.computeUnitsConsumed ?? 0
 }
 
+function extractConsumedCuFromLogs(logs: string[] | undefined): number | null {
+  if (!logs || logs.length === 0) return null
+  for (const line of logs) {
+    const match = line.match(/consumed\s+(\d+)\s+of\s+\d+\s+compute units/i)
+    if (match?.[1]) return Number(match[1])
+  }
+  return null
+}
+
+function logsFromError(err: unknown): string[] | undefined {
+  if (err && typeof err === "object" && "logs" in err) {
+    const value = (err as { logs?: unknown }).logs
+    if (Array.isArray(value) && value.every((l) => typeof l === "string")) {
+      return value
+    }
+  }
+  return undefined
+}
+
+async function rpcAndLogCu(label: string, rpcCall: () => Promise<string>, connection: anchor.web3.Connection): Promise<string> {
+  const startedAt = Date.now()
+  const sig = await rpcCall()
+  const latencyMs = Date.now() - startedAt
+  const cu = await cuOf(connection, sig)
+  console.log(`[Latency] ${label}: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
+  console.log(`[CU] ${label}: ${cu} (sig: ${sig})`)
+  return sig
+}
+
+async function expectRejectAndLogCu(label: string, rpcCall: () => Promise<unknown>): Promise<void> {
+  const startedAt = Date.now()
+  try {
+    await rpcCall()
+    expect.fail("Expected promise to reject")
+  } catch (e: unknown) {
+    const latencyMs = Date.now() - startedAt
+    const parsedCu = extractConsumedCuFromLogs(logsFromError(e))
+    console.log(`[Latency] ${label} (failed): ${latencyMs}ms (commitment=confirmed)`)
+    if (parsedCu !== null) {
+      console.log(`[CU] ${label} (failed): ${parsedCu}`)
+    } else {
+      console.log(`[CU] ${label} (failed): unavailable`)
+    }
+    expect(e).toBeDefined()
+  }
+}
+
 function gamePda(programId: PublicKey, authority: PublicKey): PublicKey {
   const [pda] = PublicKey.findProgramAddressSync(
     [Buffer.from("game"), authority.toBuffer()],
@@ -82,6 +129,29 @@ async function expectRejectWithRetry(
   }
 }
 
+async function requestAirdropWithRetry(
+  connection: anchor.web3.Connection,
+  pubkey: PublicKey,
+  lamports: number,
+  maxAttempts: number = 5,
+): Promise<void> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const sig = await connection.requestAirdrop(pubkey, lamports)
+      await connection.confirmTransaction(sig, "confirmed")
+      return
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const isRateLimited = msg.includes("429") || msg.includes("Too Many Requests")
+      if (!isRateLimited || attempt === maxAttempts - 1) {
+        throw e
+      }
+      const backoffMs = 1000 * 2 ** attempt
+      await new Promise((r) => setTimeout(r, backoffMs))
+    }
+  }
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const GAME_NAME_MAX_LEN = 64
@@ -113,8 +183,7 @@ describe("Game registry", () => {
     let balance = await connection.getBalance(platformAuthority)
     const minBalance = 0.2 * LAMPORTS_PER_SOL
     if (balance < minBalance) {
-      const sig = await connection.requestAirdrop(platformAuthority, 2 * LAMPORTS_PER_SOL)
-      await connection.confirmTransaction(sig, "confirmed")
+      await requestAirdropWithRetry(connection, platformAuthority, 1 * LAMPORTS_PER_SOL)
       balance = await connection.getBalance(platformAuthority)
     }
     if (balance < minBalance) {
@@ -133,14 +202,19 @@ describe("Game registry", () => {
   it("register_game: success with name only", async () => {
     const authority = Keypair.generate()
     const name = "My Game"
-    await program.methods
-      .registerGame(name, null, null, null, null, null, 0)
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "register_game: success with name only",
+      () =>
+        program.methods
+          .registerGame(name, null, null, null, null, null, 0)
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
     const game = await program.account.game.fetch(gamePda(program.programId, authority.publicKey))
     expect(game.authority.equals(authority.publicKey)).toBe(true)
@@ -154,8 +228,6 @@ describe("Game registry", () => {
 
   it("register_game: with description, image_uri, uri, category and fee_recipient", async () => {
     const authority = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
     const name = "Another Game"
     const description = "A cool game"
@@ -164,14 +236,19 @@ describe("Game registry", () => {
     const category = "RPG"
     const feeRecipient = Keypair.generate().publicKey
 
-    await program.methods
-      .registerGame(name, description, imageUri, uri, category, feeRecipient, 500)
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "register_game: with optional fields",
+      () =>
+        program.methods
+          .registerGame(name, description, imageUri, uri, category, feeRecipient, 500)
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
     const game = await program.account.game.fetch(gamePda(program.programId, authority.publicKey))
     expect(game.name).toBe(name)
@@ -185,10 +262,8 @@ describe("Game registry", () => {
   it("register_game: fail when name too long", async () => {
     const longName = "a".repeat(GAME_NAME_MAX_LEN + 1)
     const authority = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
-    await expect(
+    await expectRejectAndLogCu("register_game: fail when name too long", () =>
       program.methods
         .registerGame(longName, null, null, null, null, null, 0)
         .accounts({
@@ -197,17 +272,15 @@ describe("Game registry", () => {
         })
         .signers([platformAuthorityKeypair])
         .rpc({ commitment: "confirmed" }),
-    ).rejects.toThrow()
+    )
   })
 
   it("register_game: fail when description too long", async () => {
     const authority = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
     const longDesc = "x".repeat(DESCRIPTION_MAX_LEN + 1)
 
-    await expect(
+    await expectRejectAndLogCu("register_game: fail when description too long", () =>
       program.methods
         .registerGame("Game", longDesc, null, null, null, null, 0)
         .accounts({
@@ -216,40 +289,48 @@ describe("Game registry", () => {
         })
         .signers([platformAuthorityKeypair])
         .rpc({ commitment: "confirmed" }),
-    ).rejects.toThrow()
+    )
   })
 
   it("update_game: change name, description, image_uri, uri, category, fee_recipient", async () => {
     const authority = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
-    await program.methods
-      .registerGame("Original", null, null, null, null, null, 0)
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "update_game setup: register_game original",
+      () =>
+        program.methods
+          .registerGame("Original", null, null, null, null, null, 0)
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
     const newFeeRecipient = Keypair.generate().publicKey
-    await program.methods
-      .updateGame(
-        "Updated Name",
-        "New description",
-        "https://new-image.com",
-        "https://new-uri.com",
-        "Action",
-        newFeeRecipient,
-        300,
-      )
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "update_game: change fields",
+      () =>
+        program.methods
+          .updateGame(
+            "Updated Name",
+            "New description",
+            "https://new-image.com",
+            "https://new-uri.com",
+            "Action",
+            newFeeRecipient,
+            300,
+          )
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
     const game = await program.account.game.fetch(gamePda(program.programId, authority.publicKey))
     expect(game.name).toBe("Updated Name")
@@ -263,46 +344,53 @@ describe("Game registry", () => {
   it("update_game: wrong platform authority fails", async () => {
     const authority = Keypair.generate()
     const other = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await connection.requestAirdrop(other.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
-    await program.methods
-      .registerGame("Only Mine", null, null, null, null, null, 0)
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "update_game wrong authority setup: register_game",
+      () =>
+        program.methods
+          .registerGame("Only Mine", null, null, null, null, null, 0)
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
     await expectRejectWithRetry(() =>
-      program.methods
-        .updateGame("Hacked", null, null, null, null, null, null)
-        .accounts({
-          platformAuthority: other.publicKey,
-          authority: authority.publicKey,
-        })
-        .signers([other])
-        .rpc({ commitment: "confirmed" }),
+      expectRejectAndLogCu("update_game: wrong platform authority fails", () =>
+        program.methods
+          .updateGame("Hacked", null, null, null, null, null, null)
+          .accounts({
+            platformAuthority: other.publicKey,
+            authority: authority.publicKey,
+          })
+          .signers([other])
+          .rpc({ commitment: "confirmed" }),
+      ),
     )
   })
 
   it("register_game: duplicate authority fails (account already in use)", async () => {
     const authority = Keypair.generate()
-    await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-    await new Promise((r) => setTimeout(r, 500))
 
-    await program.methods
-      .registerGame("First", null, null, null, null, null, 0)
-      .accounts({
-        platformAuthority,
-        authority: authority.publicKey,
-      })
-      .signers([platformAuthorityKeypair])
-      .rpc({ commitment: "confirmed" })
+    await rpcAndLogCu(
+      "duplicate authority setup: first register_game",
+      () =>
+        program.methods
+          .registerGame("First", null, null, null, null, null, 0)
+          .accounts({
+            platformAuthority,
+            authority: authority.publicKey,
+          })
+          .signers([platformAuthorityKeypair])
+          .rpc({ commitment: "confirmed" }),
+      connection,
+    )
 
-    await expect(
+    await expectRejectAndLogCu("register_game: duplicate authority fails", () =>
       program.methods
         .registerGame("Second", null, null, null, null, null, 0)
         .accounts({
@@ -311,24 +399,27 @@ describe("Game registry", () => {
         })
         .signers([platformAuthorityKeypair])
         .rpc({ commitment: "confirmed" }),
-    ).rejects.toThrow()
+    )
   })
 
   describe("compute units", () => {
     it("register_game: consume ≤ CU_LIMIT", async () => {
       const authority = Keypair.generate()
-      await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-      await new Promise((r) => setTimeout(r, 500))
 
-      const sig = await program.methods
-        .registerGame("CU Test Game", "desc", "https://cu.test", null, "RPG", null, 0)
-        .accounts({
-          platformAuthority,
-          authority: authority.publicKey,
-        })
-        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
-        .signers([platformAuthorityKeypair])
-        .rpc({ commitment: "confirmed" })
+      const sig = await rpcAndLogCu(
+        "compute units: register_game",
+        () =>
+          program.methods
+            .registerGame("CU Test Game", "desc", "https://cu.test", null, "RPG", null, 0)
+            .accounts({
+              platformAuthority,
+              authority: authority.publicKey,
+            })
+            .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
+            .signers([platformAuthorityKeypair])
+            .rpc({ commitment: "confirmed" }),
+        connection,
+      )
 
       const cu = await cuOf(connection, sig)
       console.log("register_game CU:", cu)
@@ -338,27 +429,35 @@ describe("Game registry", () => {
 
     it("update_game: consume ≤ CU_LIMIT", async () => {
       const authority = Keypair.generate()
-      await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-      await new Promise((r) => setTimeout(r, 500))
 
-      await program.methods
-        .registerGame("Update CU Test", null, null, null, null, null, 0)
-        .accounts({
-          platformAuthority,
-          authority: authority.publicKey,
-        })
-        .signers([platformAuthorityKeypair])
-        .rpc({ commitment: "confirmed" })
+      await rpcAndLogCu(
+        "compute units setup: register_game before update",
+        () =>
+          program.methods
+            .registerGame("Update CU Test", null, null, null, null, null, 0)
+            .accounts({
+              platformAuthority,
+              authority: authority.publicKey,
+            })
+            .signers([platformAuthorityKeypair])
+            .rpc({ commitment: "confirmed" }),
+        connection,
+      )
 
-      const sig = await program.methods
-        .updateGame("Updated", null, null, null, null, null, null)
-        .accounts({
-          platformAuthority,
-          authority: authority.publicKey,
-        })
-        .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
-        .signers([platformAuthorityKeypair])
-        .rpc({ commitment: "confirmed" })
+      const sig = await rpcAndLogCu(
+        "compute units: update_game",
+        () =>
+          program.methods
+            .updateGame("Updated", null, null, null, null, null, null)
+            .accounts({
+              platformAuthority,
+              authority: authority.publicKey,
+            })
+            .preInstructions([ComputeBudgetProgram.setComputeUnitLimit({ units: CU_LIMIT })])
+            .signers([platformAuthorityKeypair])
+            .rpc({ commitment: "confirmed" }),
+        connection,
+      )
 
       const cu = await cuOf(connection, sig)
       console.log("update_game CU:", cu)
@@ -370,11 +469,9 @@ describe("Game registry", () => {
   describe("additional validations", () => {
     it("register_game: fail when image_uri too long", async () => {
       const authority = Keypair.generate()
-      await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-      await new Promise((r) => setTimeout(r, 500))
 
       const tooLong = "x".repeat(IMAGE_URI_MAX_LEN + 1)
-      await expect(
+      await expectRejectAndLogCu("register_game: fail when image_uri too long", () =>
         program.methods
           .registerGame("Game", null, tooLong, null, null, null, 0)
           .accounts({
@@ -383,16 +480,14 @@ describe("Game registry", () => {
           })
           .signers([platformAuthorityKeypair])
           .rpc({ commitment: "confirmed" }),
-      ).rejects.toThrow()
+      )
     })
 
     it("register_game: fail when uri too long", async () => {
       const authority = Keypair.generate()
-      await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-      await new Promise((r) => setTimeout(r, 500))
 
       const tooLong = "x".repeat(URI_MAX_LEN + 1)
-      await expect(
+      await expectRejectAndLogCu("register_game: fail when uri too long", () =>
         program.methods
           .registerGame("Game", null, null, tooLong, null, null, 0)
           .accounts({
@@ -401,16 +496,14 @@ describe("Game registry", () => {
           })
           .signers([platformAuthorityKeypair])
           .rpc({ commitment: "confirmed" }),
-      ).rejects.toThrow()
+      )
     })
 
     it("register_game: fail when category too long", async () => {
       const authority = Keypair.generate()
-      await connection.requestAirdrop(authority.publicKey, 1 * LAMPORTS_PER_SOL)
-      await new Promise((r) => setTimeout(r, 500))
 
       const tooLong = "x".repeat(CATEGORY_MAX_LEN + 1)
-      await expect(
+      await expectRejectAndLogCu("register_game: fail when category too long", () =>
         program.methods
           .registerGame("Game", null, null, null, tooLong, null, 0)
           .accounts({
@@ -419,7 +512,7 @@ describe("Game registry", () => {
           })
           .signers([platformAuthorityKeypair])
           .rpc({ commitment: "confirmed" }),
-      ).rejects.toThrow()
+      )
     })
   })
 })
