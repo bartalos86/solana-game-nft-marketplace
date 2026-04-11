@@ -50,6 +50,7 @@ import {
   fromWeb3JsPublicKey,
   toWeb3JsLegacyTransaction,
 } from "@metaplex-foundation/umi-web3js-adapters"
+import { logSolTxBalanceBreakdown, solTxBalanceBreakdownFromMeta } from "./sol-tx-rent"
 
 // ── Metaplex PDAs (for fixture / Anchor accounts; SDK derives internally) ───
 
@@ -84,6 +85,13 @@ async function sendTx(
   await connection.confirmTransaction(sig, "confirmed")
   const latencyMs = Date.now() - startedAt
   console.log(`[Latency] sendTx: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
+  const info = await connection.getTransaction(sig, {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  })
+  if (info?.meta) {
+    logSolTxBalanceBreakdown("sendTx", solTxBalanceBreakdownFromMeta(info.meta))
+  }
   return sig
 }
 
@@ -207,6 +215,13 @@ describe("NFT Marketplace — compute units (Metaplex SDK)", () => {
     const sig = await rpcCall()
     const latencyMs = Date.now() - startedAt
     console.log(`[Latency] ${label}: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
+    const info = await connection.getTransaction(sig, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    })
+    if (info?.meta) {
+      logSolTxBalanceBreakdown(label, solTxBalanceBreakdownFromMeta(info.meta))
+    }
     return sig
   }
 

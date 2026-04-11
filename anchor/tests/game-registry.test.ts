@@ -10,18 +10,11 @@
 import * as anchor from "@coral-xyz/anchor"
 import { Program } from "@coral-xyz/anchor"
 import type { GameRegistry } from "../target/types/game_registry"
-import { Keypair, PublicKey, ComputeBudgetProgram, LAMPORTS_PER_SOL } from "@solana/web3.js"
+import { Keypair, PublicKey, ComputeBudgetProgram, LAMPORTS_PER_SOL, SystemProgram, Transaction } from "@solana/web3.js"
 import { existsSync, readFileSync } from "node:fs"
+import { logSolTxBalanceBreakdown, solTxBalanceBreakdownFromMeta } from "./sol-tx-rent"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function cuOf(connection: anchor.web3.Connection, sig: string): Promise<number> {
-  const info = await connection.getTransaction(sig, {
-    commitment: "confirmed",
-    maxSupportedTransactionVersion: 0,
-  })
-  return info?.meta?.computeUnitsConsumed ?? 0
-}
 
 function extractConsumedCuFromLogs(logs: string[] | undefined): number | null {
   if (!logs || logs.length === 0) return null
@@ -42,14 +35,25 @@ function logsFromError(err: unknown): string[] | undefined {
   return undefined
 }
 
-async function rpcAndLogCu(label: string, rpcCall: () => Promise<string>, connection: anchor.web3.Connection): Promise<string> {
+async function rpcAndLogCu(
+  label: string,
+  rpcCall: () => Promise<string>,
+  connection: anchor.web3.Connection,
+): Promise<{ sig: string; cu: number }> {
   const startedAt = Date.now()
   const sig = await rpcCall()
   const latencyMs = Date.now() - startedAt
-  const cu = await cuOf(connection, sig)
+  const info = await connection.getTransaction(sig, {
+    commitment: "confirmed",
+    maxSupportedTransactionVersion: 0,
+  })
+  const cu = info?.meta?.computeUnitsConsumed ?? 0
   console.log(`[Latency] ${label}: ${latencyMs}ms (commitment=confirmed, sig: ${sig})`)
   console.log(`[CU] ${label}: ${cu} (sig: ${sig})`)
-  return sig
+  if (info?.meta) {
+    logSolTxBalanceBreakdown(label, solTxBalanceBreakdownFromMeta(info.meta))
+  }
+  return { sig, cu }
 }
 
 async function expectRejectAndLogCu(label: string, rpcCall: () => Promise<unknown>): Promise<void> {
@@ -143,7 +147,8 @@ async function requestAirdropWithRetry(
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       const isRateLimited = msg.includes("429") || msg.includes("Too Many Requests")
-      if (!isRateLimited || attempt === maxAttempts - 1) {
+      const isTransientRpcError = msg.includes("Internal error") || msg.includes("FetchError")
+      if ((!isRateLimited && !isTransientRpcError) || attempt === maxAttempts - 1) {
         throw e
       }
       const backoffMs = 1000 * 2 ** attempt
@@ -182,6 +187,24 @@ describe("Game registry", () => {
   beforeAll(async () => {
     let balance = await connection.getBalance(platformAuthority)
     const minBalance = 0.2 * LAMPORTS_PER_SOL
+    if (balance < minBalance) {
+      const providerWallet = provider.wallet.publicKey
+      if (!providerWallet.equals(platformAuthority)) {
+        const providerBalance = await connection.getBalance(providerWallet)
+        const topUpLamports = Math.ceil(minBalance - balance + 0.01 * LAMPORTS_PER_SOL)
+        if (providerBalance > topUpLamports) {
+          const tx = new Transaction().add(
+            SystemProgram.transfer({
+              fromPubkey: providerWallet,
+              toPubkey: platformAuthority,
+              lamports: topUpLamports,
+            }),
+          )
+          await provider.sendAndConfirm(tx, [], { commitment: "confirmed" })
+        }
+      }
+      balance = await connection.getBalance(platformAuthority)
+    }
     if (balance < minBalance) {
       await requestAirdropWithRetry(connection, platformAuthority, 1 * LAMPORTS_PER_SOL)
       balance = await connection.getBalance(platformAuthority)
@@ -406,7 +429,7 @@ describe("Game registry", () => {
     it("register_game: consume ≤ CU_LIMIT", async () => {
       const authority = Keypair.generate()
 
-      const sig = await rpcAndLogCu(
+      const { cu } = await rpcAndLogCu(
         "compute units: register_game",
         () =>
           program.methods
@@ -420,8 +443,6 @@ describe("Game registry", () => {
             .rpc({ commitment: "confirmed" }),
         connection,
       )
-
-      const cu = await cuOf(connection, sig)
       console.log("register_game CU:", cu)
       expect(cu).toBeGreaterThan(0)
       expect(cu).toBeLessThanOrEqual(CU_LIMIT)
@@ -444,7 +465,7 @@ describe("Game registry", () => {
         connection,
       )
 
-      const sig = await rpcAndLogCu(
+      const { cu } = await rpcAndLogCu(
         "compute units: update_game",
         () =>
           program.methods
@@ -458,8 +479,6 @@ describe("Game registry", () => {
             .rpc({ commitment: "confirmed" }),
         connection,
       )
-
-      const cu = await cuOf(connection, sig)
       console.log("update_game CU:", cu)
       expect(cu).toBeGreaterThan(0)
       expect(cu).toBeLessThanOrEqual(CU_LIMIT)

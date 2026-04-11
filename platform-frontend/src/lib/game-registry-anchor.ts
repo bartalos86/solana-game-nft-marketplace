@@ -148,7 +148,10 @@ export async function fetchGameByAuthority(
 
 /** Fetches all Game accounts from chain via RPC + manual decode (same path as single-game fetch). */
 export async function fetchAllGamesFromChain(): Promise<DecodedGame[]> {
-  return getAllRegisteredGames(getConnection())
+  const games = await getAllRegisteredGames(getConnection())
+  return games.sort((a, b) =>
+    (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }),
+  )
 }
 
 export type BuildRegisterGameParams = {

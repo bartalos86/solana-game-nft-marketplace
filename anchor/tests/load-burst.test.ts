@@ -34,6 +34,7 @@ import { createUmi } from "@metaplex-foundation/umi-bundle-defaults";
 import { mplTokenMetadata, createMetadataAccountV3, createMasterEditionV3 } from "@metaplex-foundation/mpl-token-metadata";
 import { createSignerFromKeypair, none, signerIdentity, signerPayer, some } from "@metaplex-foundation/umi";
 import { fromWeb3JsKeypair, fromWeb3JsPublicKey, toWeb3JsLegacyTransaction } from "@metaplex-foundation/umi-web3js-adapters";
+import { logSolTxBalanceBreakdown, solTxBalanceBreakdownFromMeta } from "./sol-tx-rent";
 
 const MPL_ID = new PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 
@@ -176,11 +177,18 @@ async function sendTx(
   throw lastError ?? new Error("sendTx failed");
 }
 
-async function cuOf(connection: anchor.web3.Connection, sig: string): Promise<number> {
+async function logCuAndSolRent(
+  connection: anchor.web3.Connection,
+  label: string,
+  sig: string,
+): Promise<number> {
   const info = await connection.getTransaction(sig, {
     commitment: "confirmed",
     maxSupportedTransactionVersion: 0,
   });
+  if (info?.meta) {
+    logSolTxBalanceBreakdown(label, solTxBalanceBreakdownFromMeta(info.meta));
+  }
   return info?.meta?.computeUnitsConsumed ?? 0;
 }
 
@@ -201,7 +209,7 @@ describe("Solana marketplace load & burst", () => {
     try {
       const sig = await send();
       const latencyMs = nowMs() - start;
-      const cu = await cuOf(connection, sig);
+      const cu = await logCuAndSolRent(connection, label, sig);
       return { ok: true, latencyMs, cu, label };
     } catch (e: unknown) {
       return {

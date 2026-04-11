@@ -64,9 +64,12 @@ type GameForMint = {
     uri: (args: [bigint]) => Promise<string>;
     balanceOf: (args: [Hash, bigint]) => Promise<bigint>;
     tokenGameAuthority: (args: [bigint]) => Promise<Hash>;
+    getPlayerTokenIdsByGame: (args: [Hash, Hash]) => Promise<bigint[]>;
+    getPlayerTokenIdsAndBalancesByGame: (args: [Hash, Hash]) => Promise<[bigint[], bigint[]]>;
   };
   write: {
     mintWithSignature: (args: [Hash, Hash, string, bigint, Hash]) => Promise<Hash>;
+    safeTransferFrom: (args: [Hash, Hash, bigint, bigint, Hash]) => Promise<Hash>;
   };
 };
 
@@ -464,5 +467,48 @@ describe("GameFactory & GameItemNFT", { concurrency: 1 }, async function () {
         }),
       /Signature already used|revert/,
     );
+  });
+
+  it("returns player NFTs filtered by game authority", async function () {
+    const authorityA = (walletClients[14]?.account?.address ?? deployer) as Hash;
+    const authorityB = (walletClients[15]?.account?.address ?? deployer) as Hash;
+    const player = (walletClients[16]?.account?.address ?? deployer) as Hash;
+    const receiver = (walletClients[17]?.account?.address ?? deployer) as Hash;
+    const playerWallet =
+      walletClients.find((wc) => wc.account?.address.toLowerCase() === player.toLowerCase()) ??
+      walletClient!;
+
+    const { game } = await createGame(factory, { authority: authorityA, name: "Game A" });
+    await createGame(factory, { authority: authorityB, name: "Game B" });
+
+    await mint(game, authorityA, player, "ipfs://a-0", 1000n);
+    await mint(game, authorityA, player, "ipfs://a-1", 1001n);
+    await mint(game, authorityB, player, "ipfs://b-0", 1002n);
+
+    const gameATokenIds = await game.read.getPlayerTokenIdsByGame([player, authorityA]);
+    const gameBTokenIds = await game.read.getPlayerTokenIdsByGame([player, authorityB]);
+    assert.equal(gameATokenIds.length, 2);
+    assert.equal(gameBTokenIds.length, 1);
+
+    const [idsA, balancesA] = await game.read.getPlayerTokenIdsAndBalancesByGame([player, authorityA]);
+    assert.equal(idsA.length, 2);
+    assert.equal(balancesA.length, 2);
+    assert.equal(balancesA[0]! + balancesA[1]!, 2n);
+
+    // Transfer one authorityA token away; query should update automatically.
+    const transferHash = await playerWallet.writeContract({
+      address: game.address,
+      abi: gameItemAbi,
+      functionName: "safeTransferFrom",
+      args: [player, receiver, idsA[0]!, 1n, "0x"],
+      account: playerWallet.account!,
+      gas: 5_000_000n,
+    });
+    await reportGasAndLatency("safeTransferFrom (authorityA item)", transferHash);
+
+    const [idsAAfter, balancesAAfter] = await game.read.getPlayerTokenIdsAndBalancesByGame([player, authorityA]);
+    assert.equal(idsAAfter.length, 1);
+    assert.equal(balancesAAfter.length, 1);
+    assert.equal(balancesAAfter[0], 1n);
   });
 });

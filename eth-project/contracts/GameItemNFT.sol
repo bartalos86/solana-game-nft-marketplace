@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./GameRegistry.sol";
 
 contract GameItemNFT is
@@ -15,6 +16,7 @@ contract GameItemNFT is
     EIP712
 {
     using ECDSA for bytes32;
+    using EnumerableSet for EnumerableSet.UintSet;
     string private constant SIGNING_DOMAIN_NAME = "GameItemNFT";
 
     uint256 private _nextTokenId;
@@ -23,6 +25,7 @@ contract GameItemNFT is
     // Prevent replay attacks
     mapping(bytes32 => bool) public usedDigests;
     mapping(uint256 => address) public tokenGameAuthority;
+    mapping(address => EnumerableSet.UintSet) private _ownedTokenIds;
 
     // EIP-712 typehash
     bytes32 private constant MINT_TYPEHASH =
@@ -123,6 +126,87 @@ contract GameItemNFT is
         address signer = ECDSA.recover(digest, signature);
         require(signer == gameAuthority, "Invalid signature");
         usedDigests[digest] = true;
+    }
+
+    function _update(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) internal override {
+        super._update(from, to, ids, values);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            uint256 tokenId = ids[i];
+
+            if (from != address(0) && balanceOf(from, tokenId) == 0) {
+                _ownedTokenIds[from].remove(tokenId);
+            }
+
+            if (to != address(0) && balanceOf(to, tokenId) > 0) {
+                _ownedTokenIds[to].add(tokenId);
+            }
+        }
+    }
+
+    function getPlayerTokenIdsByGame(
+        address player,
+        address gameAuthority
+    ) external view returns (uint256[] memory) {
+        EnumerableSet.UintSet storage owned = _ownedTokenIds[player];
+        uint256 ownedLen = owned.length();
+        uint256 matched;
+
+        for (uint256 i = 0; i < ownedLen; i++) {
+            uint256 tokenId = owned.at(i);
+            if (tokenGameAuthority[tokenId] == gameAuthority) {
+                matched++;
+            }
+        }
+
+        uint256[] memory tokenIds = new uint256[](matched);
+        uint256 outIdx;
+        for (uint256 i = 0; i < ownedLen; i++) {
+            uint256 tokenId = owned.at(i);
+            if (tokenGameAuthority[tokenId] == gameAuthority) {
+                tokenIds[outIdx] = tokenId;
+                outIdx++;
+            }
+        }
+
+        return tokenIds;
+    }
+
+    function getPlayerTokenIdsAndBalancesByGame(
+        address player,
+        address gameAuthority
+    )
+        external
+        view
+        returns (uint256[] memory tokenIds, uint256[] memory balances)
+    {
+        EnumerableSet.UintSet storage owned = _ownedTokenIds[player];
+        uint256 ownedLen = owned.length();
+        uint256 matched;
+
+        for (uint256 i = 0; i < ownedLen; i++) {
+            uint256 tokenId = owned.at(i);
+            if (tokenGameAuthority[tokenId] == gameAuthority) {
+                matched++;
+            }
+        }
+
+        tokenIds = new uint256[](matched);
+        balances = new uint256[](matched);
+        uint256 outIdx;
+        for (uint256 i = 0; i < ownedLen; i++) {
+            uint256 tokenId = owned.at(i);
+            if (tokenGameAuthority[tokenId] == gameAuthority) {
+                tokenIds[outIdx] = tokenId;
+                balances[outIdx] = balanceOf(player, tokenId);
+                outIdx++;
+            }
+        }
     }
 
     function supportsInterface(bytes4 interfaceId)
