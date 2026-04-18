@@ -68,6 +68,10 @@ function getProgram(payer: PublicKey): Program<GameRegistry> {
 
 /** Extra lamports on top of rent-exempt minimum for the new authority address. */
 const REGISTRATION_ADDRESS_BUFFER_LAMPORTS = 5_000
+/** Decoded Game account size (8 discriminator + struct payload). */
+const GAME_ACCOUNT_SIZE_BYTES = 1123
+/** Safety margin for tx fee/rounding uncertainty. */
+const REGISTRATION_TX_FEE_BUFFER_LAMPORTS = 20_000
 
 export function getGamePda(authority: PublicKey): PublicKey {
   const [pda] = PublicKey.findProgramAddressSync(
@@ -221,6 +225,17 @@ export async function registerGameOnChain(
   const connection = getConnection()
   const rentExemptMin = await connection.getMinimumBalanceForRentExemption(0)
   const transferLamports = rentExemptMin + REGISTRATION_ADDRESS_BUFFER_LAMPORTS
+  const gameAccountRentLamports = await connection.getMinimumBalanceForRentExemption(
+    GAME_ACCOUNT_SIZE_BYTES,
+  )
+  const platformBalanceLamports = await connection.getBalance(platformKeypair.publicKey, 'confirmed')
+  const requiredLamports =
+    transferLamports + gameAccountRentLamports + REGISTRATION_TX_FEE_BUFFER_LAMPORTS
+  if (platformBalanceLamports < requiredLamports) {
+    throw new Error(
+      `Insufficient platform SOL for registration. Required at least ${requiredLamports} lamports, current balance is ${platformBalanceLamports} lamports.`,
+    )
+  }
 
   const transferIx = SystemProgram.transfer({
     fromPubkey: platformKeypair.publicKey,
@@ -287,4 +302,55 @@ export async function buildRemoveGameTransaction(
   tx.recentBlockhash = blockhash
   tx.partialSign(platformKeypair)
   return tx
+}
+
+export type RemoveGameOnChainParams = {
+  authority: PublicKey
+}
+
+/** Sends remove_game for a single game authority. Server-only. */
+export async function removeGameOnChain(
+  params: RemoveGameOnChainParams,
+): Promise<string> {
+  const platformKeypair = getPlatformKeypair()
+  const connection = getConnection()
+  const tx = await buildRemoveGameTransaction({ authority: params.authority })
+  const { blockhash } = await connection.getLatestBlockhash('confirmed')
+  tx.recentBlockhash = blockhash
+  tx.sign(platformKeypair)
+
+  const sig = await connection.sendRawTransaction(tx.serialize(), {
+    skipPreflight: false,
+    preflightCommitment: 'confirmed',
+  })
+  await connection.confirmTransaction(sig, 'confirmed')
+  return sig
+}
+
+export type RemoveAllGamesOnChainResult = {
+  removed: Array<{ authority: string; signature: string }>
+  failed: Array<{ authority: string; error: string }>
+}
+
+/** Removes all currently registered games via remove_game instruction. Server-only. */
+export async function removeAllGamesOnChain(): Promise<RemoveAllGamesOnChainResult> {
+  const games = await fetchAllGamesFromChain()
+  const removed: RemoveAllGamesOnChainResult['removed'] = []
+  const failed: RemoveAllGamesOnChainResult['failed'] = []
+
+  for (const game of games) {
+    try {
+      const signature = await removeGameOnChain({
+        authority: new PublicKey(game.authority),
+      })
+      removed.push({ authority: game.authority, signature })
+    } catch (error) {
+      failed.push({
+        authority: game.authority,
+        error: error instanceof Error ? error.message : 'Failed to remove game',
+      })
+    }
+  }
+
+  return { removed, failed }
 }

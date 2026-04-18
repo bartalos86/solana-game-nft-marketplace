@@ -92,7 +92,7 @@ export default function CommonMarketplacePage() {
 
   useEffect(() => {
     fetchAll()
-  }, [])
+  }, [fetchAll])
 
   const handleBuy = async (listing: MarketplaceListingResponse) => {
     if (!wallet.publicKey) return

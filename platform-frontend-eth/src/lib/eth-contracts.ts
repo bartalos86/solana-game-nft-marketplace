@@ -144,6 +144,13 @@ export const gameFactoryAbi = [
   },
   {
     type: 'function',
+    name: 'removeGame',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'authority', type: 'address' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
     name: 'gameItems',
     stateMutability: 'view',
     inputs: [],

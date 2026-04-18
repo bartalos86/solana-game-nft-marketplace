@@ -5,6 +5,8 @@ import { useParams, useRouter, usePathname } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { PublicKey } from '@solana/web3.js'
 import { Transaction } from '@solana/web3.js'
+import type { Connection } from '@solana/web3.js'
+import bs58 from 'bs58'
 import { fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { publicKey } from '@metaplex-foundation/umi'
 import { getAssetsByOwnerWithMetadata } from 'game-sdk'
@@ -16,9 +18,48 @@ import type { MarketplaceListingResponse } from '@/lib/marketplace'
 
 const CHAIN_UPDATE_DELAY_MS = 15000
 
+function isAlreadyProcessedError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : ''
+  return message.toLowerCase().includes('already been processed')
+}
+
+async function sendAndConfirmSignedTx(params: {
+  connection: Connection
+  signedTx: Transaction
+  blockhash: string
+  lastValidBlockHeight: number
+}): Promise<void> {
+  const { connection, signedTx, blockhash, lastValidBlockHeight } = params
+  try {
+    const sig = await connection.sendRawTransaction(signedTx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    })
+    await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
+    return
+  } catch (error) {
+    if (!isAlreadyProcessedError(error)) {
+      throw error
+    }
+  }
+
+  const existingSig = signedTx.signature
+  if (!existingSig) {
+    throw new Error('Transaction appears already processed, but no signature was found.')
+  }
+  await connection.confirmTransaction(
+    { signature: bs58.encode(existingSig), blockhash, lastValidBlockHeight },
+    'confirmed'
+  )
+}
+
 interface GameInfo {
   name: string
-  solanaPublicKey: string
 }
 
 function sortListingsWithOwnLast(
@@ -63,7 +104,6 @@ export default function GameMarketplacePage() {
   const [listings, setListings] = useState<MarketplaceListingResponse[]>([])
   const [yourItems, setYourItems] = useState<YourItem[]>([])
   const [loadingListings, setLoadingListings] = useState(true)
-  const [loadingYours, setLoadingYours] = useState(false)
   const [putOnSaleItem, setPutOnSaleItem] = useState<YourItem | null>(null)
   const [putOnSaleOpen, setPutOnSaleOpen] = useState(false)
   const [buyingListingId, setBuyingListingId] = useState<string | null>(null)
@@ -87,22 +127,15 @@ export default function GameMarketplacePage() {
     }
   }, [address])
 
-  // useEffect(() => {
-  //   fetchListings()
-  //   // const t = setInterval(fetchListings, 30_000)
-  //   return () => clearInterval(t)
-  // }, [fetchListings])
-
   useEffect(() => {
     fetchListings()
-  }, [])
+  }, [fetchListings])
 
   useEffect(() => {
     if (!wallet.publicKey || !address) {
       setYourItems([])
       return
     }
-    setLoadingYours(true)
     const metaplexUserPublicKey = fromWeb3JsPublicKey(wallet.publicKey)
     const gamePubkey = publicKey(address)
     const listedMints = new Set(listings.map((l) => l.mint))
@@ -119,7 +152,6 @@ export default function GameMarketplacePage() {
         setYourItems(items)
       })
       .catch(() => setYourItems([]))
-      .finally(() => setLoadingYours(false))
   }, [wallet.publicKey, address, listings])
 
   useEffect(() => {
@@ -130,13 +162,13 @@ export default function GameMarketplacePage() {
       .then((data) => {
         if (cancelled) return
         if (data?.name && data?.solanaPublicKey) {
-          setGameInfo({ name: data.name, solanaPublicKey: data.solanaPublicKey })
+          setGameInfo({ name: data.name })
         } else {
-          setGameInfo({ name: 'Game', solanaPublicKey: address })
+          setGameInfo({ name: 'Game' })
         }
       })
       .catch(() => {
-        if (!cancelled) setGameInfo({ name: 'Game', solanaPublicKey: address })
+        if (!cancelled) setGameInfo({ name: 'Game' })
       })
     return () => { cancelled = true }
   }, [address])
@@ -164,11 +196,12 @@ export default function GameMarketplacePage() {
       const tx = new Transaction({ feePayer: wallet.publicKey }).add(...ixs)
       tx.recentBlockhash = blockhash
       const signed = await wallet.signTransaction!(tx)
-      const sig = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
+      await sendAndConfirmSignedTx({
+        connection,
+        signedTx: signed,
+        blockhash,
+        lastValidBlockHeight,
       })
-      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
       await new Promise((r) => setTimeout(r, CHAIN_UPDATE_DELAY_MS))
       await fetchListings()
     } finally {
@@ -197,11 +230,12 @@ export default function GameMarketplacePage() {
       const tx = new Transaction({ feePayer: buyer }).add(...ixs)
       tx.recentBlockhash = blockhash
       const signed = await wallet.signTransaction!(tx)
-      const sig = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-        preflightCommitment: 'confirmed',
+      await sendAndConfirmSignedTx({
+        connection,
+        signedTx: signed,
+        blockhash,
+        lastValidBlockHeight,
       })
-      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
       await new Promise((r) => setTimeout(r, CHAIN_UPDATE_DELAY_MS))
       await fetchListings()
     } finally {
@@ -227,11 +261,12 @@ export default function GameMarketplacePage() {
         const tx = new Transaction({ feePayer: buyer }).add(...ixs)
         tx.recentBlockhash = blockhash
         const signed = await wallet.signTransaction!(tx)
-        const sig = await connection.sendRawTransaction(signed.serialize(), {
-          skipPreflight: false,
-          preflightCommitment: 'confirmed',
+        await sendAndConfirmSignedTx({
+          connection,
+          signedTx: signed,
+          blockhash,
+          lastValidBlockHeight,
         })
-        await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
         await new Promise((r) => setTimeout(r, CHAIN_UPDATE_DELAY_MS))
         await fetchListings()
       } finally {

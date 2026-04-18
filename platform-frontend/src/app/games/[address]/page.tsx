@@ -96,8 +96,6 @@ export default function GameDetailPage() {
 
   const gameName = gameInfo?.name ?? 'Game'
   const gameDescription = gameInfo?.description?.trim() || 'Discover unique game items, weapons, and collectibles.'
-  const gameImageUri = gameInfo?.imageUri?.trim()
-  const gameUrl = gameInfo?.uri?.trim()
   const loadingGame = address && gameInfo === null && gameError === null
 
   if (loadingGame) {

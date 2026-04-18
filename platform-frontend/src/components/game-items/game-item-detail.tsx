@@ -33,11 +33,6 @@ function isItemAttribute(a: unknown): a is { trait_type: string; value: string }
   )
 }
 
-function truncate(str: string, start = 6, end = 4) {
-  if (str.length <= start + end + 3) return str
-  return `${str.slice(0, start)}...${str.slice(-end)}`
-}
-
 export function GameItemDetail({
   metadata,
   mintAddress,

@@ -11,7 +11,6 @@ import { toWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { fromWeb3JsPublicKey } from '@metaplex-foundation/umi-web3js-adapters'
 import { createMarketplaceUmi } from '@/lib/umi'
 import {
-  MARKETPLACE_PROGRAM_ID,
   MARKETPLACE_FEE_RECIPIENT,
   getMetadataPda,
   getMasterEditionPda,
@@ -21,9 +20,6 @@ import idl from './marketplace-idl.json'
 
 const MARKETPLACE_IDL = idl as Idl
 
-const MARKETPLACE_PROGRAM_ID_WEB3 = new PublicKey(
-  typeof MARKETPLACE_PROGRAM_ID === 'string' ? MARKETPLACE_PROGRAM_ID : (MARKETPLACE_PROGRAM_ID as { toString(): string }).toString()
-)
 const MARKETPLACE_FEE_RECIPIENT_WEB3 = new PublicKey(
   typeof MARKETPLACE_FEE_RECIPIENT === 'string' ? MARKETPLACE_FEE_RECIPIENT : (MARKETPLACE_FEE_RECIPIENT as { toString(): string }).toString()
 )

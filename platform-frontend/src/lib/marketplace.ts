@@ -11,7 +11,9 @@ import { PublicKey as Web3PublicKey } from '@solana/web3.js'
 
 // ─── Constants (UMI PublicKey) ─────────────────────────────────────────────
 
-const MARKETPLACE_PROGRAM_ID_BASE58 = '2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq'
+const MARKETPLACE_PROGRAM_ID_BASE58 =
+  process.env.NEXT_PUBLIC_MARKETPLACE_PROGRAM_ID ??
+  '2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq'
 const MARKETPLACE_FEE_RECIPIENT_BASE58 = '5GLPnCWkDniHq4B7o7K5fsxRKf4xpprX2ENngRs4VGeB'
 
 export const MARKETPLACE_PROGRAM_ID = publicKey(MARKETPLACE_PROGRAM_ID_BASE58)

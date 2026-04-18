@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchAllGamesFromChain } from '@/lib/game-registry-anchor'
+import { fetchAllGamesFromChain, removeAllGamesOnChain } from '@/lib/game-registry-anchor'
 
 /** Shape expected by marketplace page (on-chain game mapped to legacy format). */
 function toGameRecord(g: {
@@ -31,6 +31,24 @@ export async function GET() {
     console.error('GET /api/games', e)
     return NextResponse.json(
       { error: 'Failed to fetch games' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE() {
+  try {
+    const result = await removeAllGamesOnChain()
+    return NextResponse.json({
+      removedCount: result.removed.length,
+      failedCount: result.failed.length,
+      removed: result.removed,
+      failed: result.failed,
+    })
+  } catch (e) {
+    console.error('DELETE /api/games', e)
+    return NextResponse.json(
+      { error: 'Failed to remove registered games' },
       { status: 500 }
     )
   }

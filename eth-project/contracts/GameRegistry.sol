@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 /**
  * Game registry: platform-authority-only register/update/remove of game metadata.
  * Mirrors the Solana game_registry program (one game per authority).
  */
-contract GameRegistry {
+contract GameRegistry is Ownable {
     // -------------------------------------------------------------------------
     // Constants (match Solana game_registry)
     // -------------------------------------------------------------------------
@@ -22,8 +24,6 @@ contract GameRegistry {
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
-
-    address public platformAuthority;
 
     struct Game {
         address authority;
@@ -78,17 +78,20 @@ contract GameRegistry {
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(address _platformAuthority) {
-        platformAuthority = _platformAuthority;
-    }
+    constructor(address _platformAuthority) Ownable(_platformAuthority) {}
 
     // -------------------------------------------------------------------------
     // Modifiers
     // -------------------------------------------------------------------------
 
     modifier onlyPlatformAuthority() {
-        if (msg.sender != platformAuthority) revert Unauthorized();
+        _checkOwner();
         _;
+    }
+
+    /// Backward-compatiblity for tests
+    function platformAuthority() external view returns (address) {
+        return owner();
     }
 
     // -------------------------------------------------------------------------

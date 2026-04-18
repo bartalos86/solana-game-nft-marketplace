@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
-    "start": "next start"
+    "start": "next start",
+    "test": "node --test",
+    "test:irys-cost": "node --test test/irys-upload-cost.test.mjs"
   },
   "dependencies": {
     "dotenv": "^17.3.1",

@@ -4,7 +4,7 @@ import { GameCategoryFilter } from '@/components/games/game-category-filter'
 import { GamesGrid } from '@/components/games/games-grid'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Gamepad2 } from 'lucide-react'
+import { Plus, Gamepad2, Trash2 } from 'lucide-react'
 
 const CATEGORIES = ['Action', 'RPG', 'Strategy', 'Racing', 'Adventure', 'Other']
 
@@ -40,6 +40,7 @@ export default function GamesPage() {
   const [games, setGames] = useState<ReturnType<typeof toGridGame>[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deletingAll, setDeletingAll] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -63,6 +64,32 @@ export default function GamesPage() {
       })
     return () => { cancelled = true }
   }, [])
+
+  const handleDeleteAllGames = async () => {
+    if (deletingAll) return
+    const confirmed = window.confirm(
+      'Delete all registered games from chain? This action cannot be undone.'
+    )
+    if (!confirmed) return
+
+    setDeletingAll(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/games', { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error ?? 'Failed to delete games')
+      }
+      setGames([])
+      if ((data?.failedCount ?? 0) > 0) {
+        setError(`Deleted ${data?.removedCount ?? 0} games, but ${data?.failedCount ?? 0} failed.`)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete games')
+    } finally {
+      setDeletingAll(false)
+    }
+  }
 
   const filteredGames =
     selectedCategory === 'all'
@@ -88,13 +115,24 @@ export default function GamesPage() {
                 Browse blockchain games and collect NFT items.
               </p>
             </div>
-            <Link
-              href="/games/register"
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500"
-            >
-              <Plus className="h-4 w-4" />
-              Register a Game
-            </Link>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDeleteAllGames}
+                disabled={deletingAll}
+                className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deletingAll ? 'Deleting...' : 'Delete All Games'}
+              </button>
+              <Link
+                href="/games/register"
+                className="flex items-center gap-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:from-blue-500 hover:to-indigo-500"
+              >
+                <Plus className="h-4 w-4" />
+                Register a Game
+              </Link>
+            </div>
           </div>
         </div>
       </div>

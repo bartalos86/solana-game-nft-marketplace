@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { publicKey } from '@metaplex-foundation/umi'
 import { fetchDigitalAsset } from '@metaplex-foundation/mpl-token-metadata'
+import { PublicKey } from '@solana/web3.js'
 import { createMarketplaceUmi } from '@/lib/umi'
 import { firstZodMessage } from '@/lib/zod'
+import { fetchGameByAuthority } from '@/lib/game-registry-anchor'
 import { gameAddressParamsSchema, type GameAddressParams } from '@/lib/validations/games'
 import {
   MARKETPLACE_PROGRAM_ID,
@@ -32,6 +34,14 @@ export async function GET(
     }
     const { address: gameAddress } = parsed.data as GameAddressParams
     const umi = createMarketplaceUmi(RPC)
+    const acceptedUpdateAuthorities = new Set<string>([gameAddress])
+    try {
+      // URLs currently use game authority; listed NFTs are minted with game PDA as update authority.
+      const game = await fetchGameByAuthority(new PublicKey(gameAddress))
+      if (game?.publicKey) acceptedUpdateAuthorities.add(game.publicKey)
+    } catch {
+      // If address is not an authority or cannot be resolved, fall back to direct address match.
+    }
 
     const accounts = await umi.rpc.getProgramAccounts(MARKETPLACE_PROGRAM_ID, {
       dataSlice: { offset: 0, length: LISTING_ACCOUNT_SIZE },
@@ -59,7 +69,7 @@ export async function GET(
       } catch {
         continue
       }
-      if (asset.metadata.updateAuthority.toString() !== gameAddress) continue
+      if (!acceptedUpdateAuthorities.has(asset.metadata.updateAuthority.toString())) continue
 
       let name = 'Unnamed'
       let description = ''

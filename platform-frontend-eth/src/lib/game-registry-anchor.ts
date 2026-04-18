@@ -138,7 +138,13 @@ export async function fetchAllGamesFromChain(): Promise<DecodedGame[]> {
     cursor = end + 1n
   }
 
-  const authorities = Array.from(new Set(logs.map((log) => log.args.authority).filter(Boolean)))
+  const authorities = Array.from(
+    new Set(
+      logs
+        .map((log) => (log as { args?: { authority?: `0x${string}` } }).args?.authority)
+        .filter((authority): authority is `0x${string}` => Boolean(authority)),
+    ),
+  )
   const games: Array<DecodedGame | null> = []
   for (const authorityBatch of chunkArray(authorities, DEFAULT_READ_BATCH_SIZE)) {
     const batchGames = await Promise.all(
@@ -207,4 +213,57 @@ export async function registerGameOnChain(params: RegisterGameOnChainParams): Pr
   await client.waitForTransactionReceipt({ hash: txHash })
   gamesCache = null
   return txHash
+}
+
+export type RemoveGameOnChainParams = {
+  authority: `0x${string}`
+}
+
+export async function removeGameOnChain(
+  params: RemoveGameOnChainParams,
+): Promise<`0x${string}`> {
+  if (!isAddress(params.authority) || params.authority === zeroAddress) {
+    throw new Error('Invalid game authority address')
+  }
+
+  const client = createEthPublicClient()
+  const { account, walletClient } = createPlatformWalletClient()
+  const txHash = await walletClient.writeContract({
+    address: GAME_FACTORY_ADDRESS,
+    abi: gameFactoryAbi,
+    functionName: 'removeGame',
+    args: [params.authority],
+    account,
+    chain: walletClient.chain,
+  })
+  await client.waitForTransactionReceipt({ hash: txHash })
+  gamesCache = null
+  return txHash
+}
+
+export type RemoveAllGamesOnChainResult = {
+  removed: Array<{ authority: string; txHash: `0x${string}` }>
+  failed: Array<{ authority: string; error: string }>
+}
+
+export async function removeAllGamesOnChain(): Promise<RemoveAllGamesOnChainResult> {
+  const games = await fetchAllGamesFromChain()
+  const removed: RemoveAllGamesOnChainResult['removed'] = []
+  const failed: RemoveAllGamesOnChainResult['failed'] = []
+
+  for (const game of games) {
+    try {
+      const txHash = await removeGameOnChain({
+        authority: game.authority as `0x${string}`,
+      })
+      removed.push({ authority: game.authority, txHash })
+    } catch (error) {
+      failed.push({
+        authority: game.authority,
+        error: error instanceof Error ? error.message : 'Failed to remove game',
+      })
+    }
+  }
+
+  return { removed, failed }
 }

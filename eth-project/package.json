@@ -6,7 +6,6 @@
     "deploy:persistent:sepolia": "pnpm exec hardhat run --network sepolia scripts/deploy-persistent-sepolia.ts",
     "test:local": "pnpm exec hardhat test",
     "test:sepolia": "pnpm exec hardhat test --network sepolia test/GameFactory.integration.ts test/Marketplace.integration.ts",
-    "measure:slither": "node scripts/measure-slither.mjs"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.7",
