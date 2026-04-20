@@ -79,6 +79,9 @@ export function PutOnSaleDialog({
               onChange={(e) => setPriceEth(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-white placeholder:text-white/30 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/50"
             />
+            <p className="mt-2 text-xs text-amber-300/90">
+              You will receive approximately 95% of the sale price after marketplace fees.
+            </p>
           </div>
           <div>
             <label htmlFor="expiry" className="mb-1.5 block text-sm font-medium text-white/80">

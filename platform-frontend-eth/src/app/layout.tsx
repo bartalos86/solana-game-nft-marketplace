@@ -5,7 +5,7 @@ import { AppLayout } from '@/components/app-layout'
 import React from 'react'
 
 export const metadata: Metadata = {
-  title: 'NFT Marketplace DApp',
+  title: 'NFT Marketplace DApp (Ethereum)',
   description: 'Ethereum game NFT marketplace frontend',
 }
 

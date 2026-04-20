@@ -22,6 +22,23 @@ interface GameItemDetailProps {
   onBack?: () => void
 }
 
+function resolveImageSrc(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const value = raw.trim()
+  if (!value) return null
+  if (value.startsWith('ipfs://')) return value.replace('ipfs://', 'https://ipfs.io/ipfs/')
+  if (
+    value.startsWith('http://') ||
+    value.startsWith('https://') ||
+    value.startsWith('/') ||
+    value.startsWith('data:') ||
+    value.startsWith('blob:')
+  ) {
+    return value
+  }
+  return null
+}
+
 function isItemAttribute(a: unknown): a is { trait_type: string; value: string } {
   return (
     typeof a === 'object' &&
@@ -42,6 +59,7 @@ export function GameItemDetail({
   const { name, image, description, gameAddress: metaGameAddress, attributes } = metadata
   const attrsList = Array.isArray(attributes) ? attributes.filter(isItemAttribute) : []
   const resolvedGameAddress = metaGameAddress || gameAddress
+  const resolvedImageSrc = resolveImageSrc(image)
   const rarity = attrsList.find((a) => a.trait_type === 'rarity')?.value as Rarity | undefined
   const imageBorderClass =
     rarity && RARITY_COLORS[rarity] ? RARITY_COLORS[rarity] : 'border-white/8 bg-black/20'
@@ -69,9 +87,9 @@ export function GameItemDetail({
             <div className="absolute left-1/2 top-0 h-[200px] w-[400px] -translate-x-1/2 rounded-full bg-indigo-600/10 blur-[60px]" />
           </div>
           <div className="relative aspect-square w-full">
-            {image ? (
+            {resolvedImageSrc ? (
               <Image
-                src={image}
+                src={resolvedImageSrc}
                 alt={name || 'Item'}
                 fill
                 className="object-contain"

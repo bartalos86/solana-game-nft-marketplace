@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Game Casino",
-  description: "Slot-style NFT game",
+  title: "Sample Game (Solana)",
+  description: "Solana sample NFT game",
 };
 
 export default function RootLayout({
