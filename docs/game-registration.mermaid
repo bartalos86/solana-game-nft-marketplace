@@ -6,16 +6,13 @@ config:
 sequenceDiagram
     actor Developer
     participant Platform
-    participant Database
-    participant GameFactoryContract
-    participant Ethereum
+    participant GameFactory/GameRegistry
+    participant Ethereum/Solana
 
     Developer->>Platform: Register new game
     Platform->>Platform: Generate Solana and Ethereum keypair
-    Platform->>Database: Store game metadata and public keys
-    Database-->>Platform: Game data stored
-    Platform->>GameFactoryContract: createGame(name, symbol, authority, royaltyBps)
-    GameFactoryContract->>Ethereum: new GameItemNFT(name, symbol, ...)
+    Platform->>GameFactory/GameRegistry: createGame(name, game_pub_key, royalty, uri...)
+    GameFactory/GameRegistry->>Ethereum/Solana: createGame()
 
-    Ethereum-->>Platform: Game NFT Contract deployed
+    Ethereum/Solana-->>Platform: Game data registered on-chain
     Platform-->>Developer: Game registered

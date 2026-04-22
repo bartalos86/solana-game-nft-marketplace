@@ -4,3 +4,6 @@ node_modules
 !.env.example
 benchmark-results/
 dist/
+auction-house-sdk/
+.cursor/
+.next/

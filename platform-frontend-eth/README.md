@@ -1,87 +1,19 @@
-# nft-marketplace-dapp
+# Platform Frontend (Ethereum)
 
-This is a Next.js app containing:
+This is the Ethereum version of the platform frontend. It is the user-facing marketplace/game web app that talks to the contracts in `eth-project` and uses shared code from the local SDK packages.
 
-- Tailwind CSS setup for styling
-- Useful wallet UI elements setup using [Gill](https://gill.site/)
-- A basic Greeter Solana program written in Anchor
-- UI components for interacting with the Greeter program
+## Prerequisites
 
-## Getting Started
+- Node.js 20+
+- pnpm
 
-### Installation
+## Start
 
-#### Download the template
-
-```shell
-pnpm create solana-dapp@latest -t gh:solana-foundation/templates/templates/nft-marketplace-dapp
-```
-
-#### Install Dependencies
-
-```shell
+```bash
 pnpm install
-```
-
-## Apps
-
-### anchor
-
-This is a Solana program written in Rust using the Anchor framework.
-
-#### Commands
-
-You can use any normal anchor commands. Either move to the `anchor` directory and run the `anchor` command or prefix the
-command with `pnpm`, eg: `pnpm anchor`.
-
-#### Sync the program id:
-
-Running this command will create a new keypair in the `anchor/target/deploy` directory and save the address to the
-Anchor config file and update the `declare_id!` macro in the `./src/lib.rs` file of the program. This will also update
-the constant in `anchor/src/basic-exports.ts` file.
-
-```shell
-pnpm run setup
-```
-
-#### Build the program:
-
-```shell
-pnpm anchor-build
-```
-
-#### Start the test validator with the program deployed:
-
-```shell
-pnpm anchor-localnet
-```
-
-#### Run the tests
-
-```shell
-pnpm anchor-test
-```
-
-#### Deploy to Devnet
-
-```shell
-pnpm anchor deploy --provider.cluster devnet
-```
-
-### web
-
-This is a React app that uses the Anchor generated client to interact with the Solana program.
-
-#### Commands
-
-Start the web app
-
-```shell
 pnpm dev
 ```
 
-Build the web app
+## Tests
 
-```shell
-pnpm build
-```
+This package currently does not define a dedicated frontend test script in `package.json`.

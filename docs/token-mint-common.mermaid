@@ -1,0 +1,29 @@
+---
+config:
+  theme: redux-color
+  look: handDrawn
+---
+sequenceDiagram
+    actor Player
+    participant GameClient as Game Client (GameSDK)
+    participant GameServer as Game Server (GameSDK)
+    participant Irys
+    participant WalletUI as Wallet UI
+    participant SolanaRPC as Solana/Ethereum RPC
+
+    Player->>GameClient: getGameItemAsNFT()
+
+    GameClient->>GameServer: createFileUploadFeeTransferTransaction(imagePath, item)
+    GameServer->>Irys: fetchAssetCostToStore()
+    Irys-->>GameServer: Estimated cost
+    GameServer-->>GameClient: Transfer metadata + image cost tx
+
+    GameServer->>GameServer: serializeTransaction()
+    GameServer-->>GameClient: Send serialized transaction
+    GameClient->>GameClient: deserializeTransaction()
+
+    GameClient->>WalletUI: signTransaction()
+    WalletUI-->>GameClient: signed tx
+
+    GameClient->>SolanaRPC: sendTransaction()
+    SolanaRPC-->>GameClient: confirmation

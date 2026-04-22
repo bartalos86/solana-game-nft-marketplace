@@ -14,7 +14,7 @@ sequenceDiagram
     GameFrontend->>GameBackend: Send playerAddress
 
     GameBackend->>GameBackend: Upload metadata and asset image
-    GameBackend->>GameBackend: Create Mint struct (to, uri, nonce)
+    GameBackend->>GameBackend: Create Mint struct (authority, to, uri, amount, nonce)
     GameBackend->>GameBackend: Compute structHash = keccak256(MINT_TYPEHASH, to, keccak256(uri), nonce)
     GameBackend->>GameBackend: Compute digest with EIP712(domain, structHash)
     GameBackend->>GameBackend: Sign digest with private key → signature
@@ -29,5 +29,5 @@ sequenceDiagram
     GameItemContract->>GameItemContract: signer = ECDSA.recover(signature)
     GameItemContract->>GameItemContract: Check signer == owner and signature unused
 
-    GameItemContract->>Ethereum: _safeMint(to, tokenId)
+    GameItemContract->>Ethereum: _mint(to, tokenId, amount)
     Ethereum-->>Player: NFT minted to wallet
