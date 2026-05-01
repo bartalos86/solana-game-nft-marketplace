@@ -5,8 +5,6 @@ import "./GameItemNFT.sol";
 import "./GameRegistry.sol";
 
 /**
- * Combined game registry + shared collection manager for Ethereum.
- *
  * - Inherits on-chain game metadata registry from GameRegistry
  * - Deploys one shared ERC-1155 collection contract
  * - All items are minted in that single contract and categorized by game authority

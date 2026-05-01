@@ -18,8 +18,8 @@ contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
         uint256 expiry;
     }
 
-    uint256 public marketplaceFeePercent = 250; // 2.5% (basis points)
-    address public feeRecipient;
+    uint256 public constant MARKETPLACE_FEE_PERCENT = 250; // 2.5% (basis points)
+    address public immutable feeRecipient;
     uint256 public listingCounter;
 
     mapping(uint256 => Listing) public listings;
@@ -41,80 +41,73 @@ contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
     event Cancelled(uint256 indexed listingId);
 
     constructor(address _feeRecipient) {
+        require(_feeRecipient != address(0), "Invalid fee recipient");
         feeRecipient = _feeRecipient;
     }
 
-    // --------------------------------------------------
-    // LIST NFT
-    // --------------------------------------------------
-
+    /// List an ERC-1155 token for sale; tokens are held in escrow by this contract until sold or cancelled.
     function listNFT(
-        address _nft,
-        uint256 _tokenId,
-        uint256 _quantity,
-        uint256 _price,
-        uint256 _expiry
-    ) external {
-        require(_price > 0, "Price must be > 0");
-        require(_quantity > 0, "Quantity must be > 0");
-        require(_expiry > block.timestamp, "Invalid expiry");
+        address nftAddress,
+        uint256 tokenId,
+        uint256 quantity,
+        uint256 price,
+        uint256 expiry
+    ) external nonReentrant {
+        require(price > 0, "Price must be > 0");
+        require(quantity > 0, "Quantity must be > 0");
+        // slither-disable-next-line timestamp
+        require(expiry > block.timestamp, "Invalid expiry");
         require(
-            IERC165(_nft).supportsInterface(type(IERC1155).interfaceId),
+            IERC165(nftAddress).supportsInterface(type(IERC1155).interfaceId),
             "Not ERC1155"
         );
 
-        IERC1155 nft = IERC1155(_nft);
+        IERC1155 nft = IERC1155(nftAddress);
         require(
-            nft.balanceOf(msg.sender, _tokenId) >= _quantity,
+            nft.balanceOf(msg.sender, tokenId) >= quantity,
             "Insufficient balance"
         );
 
-        // Transfer ERC-1155 tokens to escrow.
-        nft.safeTransferFrom(msg.sender, address(this), _tokenId, _quantity, "");
+        uint256 listingId = listingCounter;
+        listingCounter++;
 
-        listings[listingCounter] = Listing({
+        listings[listingId] = Listing({
             seller: msg.sender,
-            nft: _nft,
-            tokenId: _tokenId,
-            quantity: _quantity,
-            price: _price,
-            expiry: _expiry
+            nft: nftAddress,
+            tokenId: tokenId,
+            quantity: quantity,
+            price: price,
+            expiry: expiry
         });
 
         emit Listed(
-            listingCounter,
+            listingId,
             msg.sender,
-            _nft,
-            _tokenId,
-            _quantity,
-            _price
+            nftAddress,
+            tokenId,
+            quantity,
+            price
         );
 
-        listingCounter++;
+        nft.safeTransferFrom(msg.sender, address(this), tokenId, quantity, "");
     }
 
-    // --------------------------------------------------
-    // BUY NFT
-    // --------------------------------------------------
-
-    function buyNFT(uint256 _listingId)
+    /// Purchase a listing; distributes ETH to royalty receiver, marketplace, and seller, then transfers the token.
+    function buyNFT(uint256 listingId)
         external
         payable
         nonReentrant
     {
-        Listing memory listing = listings[_listingId];
+        Listing memory listing = listings[listingId];
 
         require(listing.price > 0, "Invalid listing");
+        // slither-disable-next-line timestamp
         require(block.timestamp <= listing.expiry, "Expired");
         require(msg.value == listing.price, "Incorrect ETH sent");
 
-        delete listings[_listingId]; // Prevent reentrancy
+        delete listings[listingId]; // Prevent reentrancy
 
         uint256 remainingAmount = msg.value;
-
-        // --------------------------
-        // ROYALTY SUPPORT (ERC-2981)
-        // --------------------------
 
         if (
             IERC165(listing.nft).supportsInterface(
@@ -133,26 +126,17 @@ contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
             }
         }
 
-        // --------------------------
-        // MARKETPLACE FEE
-        // --------------------------
-
         uint256 marketplaceFee =
-            (msg.value * marketplaceFeePercent) / 10000;
+            (msg.value * MARKETPLACE_FEE_PERCENT) / 10000;
 
         payable(feeRecipient).transfer(marketplaceFee);
         remainingAmount -= marketplaceFee;
 
-        // --------------------------
-        // PAY SELLER
-        // --------------------------
-
+        //Pay sellet
         payable(listing.seller).transfer(remainingAmount);
 
-        // --------------------------
-        // TRANSFER NFT TO BUYER
-        // --------------------------
 
+        //Transfer to buyer
         IERC1155(listing.nft).safeTransferFrom(
             address(this),
             msg.sender,
@@ -161,22 +145,19 @@ contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
             ""
         );
 
-        emit Purchased(_listingId, msg.sender);
+        emit Purchased(listingId, msg.sender);
     }
 
-    // --------------------------------------------------
-    // CANCEL LISTING
-    // --------------------------------------------------
-
-    function cancelListing(uint256 _listingId)
+    /// Cancel a listing and return the escrowed tokens to the seller.
+    function cancelListing(uint256 listingId)
         external
         nonReentrant
     {
-        Listing memory listing = listings[_listingId];
+        Listing memory listing = listings[listingId];
 
         require(listing.seller == msg.sender, "Not seller");
 
-        delete listings[_listingId];
+        delete listings[listingId];
 
         IERC1155(listing.nft).safeTransferFrom(
             address(this),
@@ -186,6 +167,6 @@ contract NFTMarketplace is ReentrancyGuard, ERC1155Holder {
             ""
         );
 
-        emit Cancelled(_listingId);
+        emit Cancelled(listingId);
     }
 }

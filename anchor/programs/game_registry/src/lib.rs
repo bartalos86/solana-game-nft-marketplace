@@ -187,8 +187,7 @@ pub struct RegisterGame<'info> {
     pub platform_authority: Signer<'info>,
 
     /// The game owner (authority). Game PDA is derived from this key.
-    /// CHECK: Used only as PDA seed.
-    pub authority: UncheckedAccount<'info>,
+    pub authority: SystemAccount<'info>,
 
     #[account(
         init,
@@ -208,8 +207,7 @@ pub struct UpdateGame<'info> {
     pub platform_authority: Signer<'info>,
 
     /// The game owner (used to derive game PDA).
-    /// CHECK: Used only as PDA seed.
-    pub authority: UncheckedAccount<'info>,
+    pub authority: SystemAccount<'info>,
 
     #[account(
         mut,
@@ -226,8 +224,7 @@ pub struct RemoveGame<'info> {
     pub platform_authority: Signer<'info>,
 
     /// The game owner (used to derive game PDA).
-    /// CHECK: Used only as PDA seed.
-    pub authority: UncheckedAccount<'info>,
+    pub authority: SystemAccount<'info>,
 
     #[account(
         mut,
@@ -243,22 +240,18 @@ pub struct RemoveGame<'info> {
 pub struct Game {
     /// Authority (game owner); used as PDA seed.
     pub authority: Pubkey,
-    /// Display name.
     #[max_len(GAME_NAME_MAX_LEN)]
     pub name: String,
-    /// Game description.
     #[max_len(DESCRIPTION_MAX_LEN)]
     pub description: String,
-    /// Cover/image URI.
     #[max_len(IMAGE_URI_MAX_LEN)]
     pub image_uri: String,
-    /// Generic URI / website for the game.
     #[max_len(URI_MAX_LEN)]
     pub uri: String,
-    /// Category (e.g. Action, RPG).
+    /// Category tag, e.g. "Action", "RPG".
     #[max_len(CATEGORY_MAX_LEN)]
     pub category: String,
-    /// Fee recipient for marketplace / royalties (defaults to authority).
+    /// Fee recipient for royalties (defaults to authority).
     pub fee_recipient: Pubkey,
     /// Fee in basis points (10000 = 100%).
     pub fee_percent_bps: u16,

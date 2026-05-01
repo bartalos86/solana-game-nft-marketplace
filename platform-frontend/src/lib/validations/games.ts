@@ -9,7 +9,7 @@ export const createGameSchema = z.object({
   category: nonEmptyString,
   gameUrl: z.string().trim().optional().transform((v) => v || undefined),
   solanaPublicKey: nonEmptyString,
-  ethereumPublicKey: nonEmptyString,
+  ethereumPublicKey: nonEmptyString.optional(),
 })
 
 export type CreateGameInput = z.infer<typeof createGameSchema>

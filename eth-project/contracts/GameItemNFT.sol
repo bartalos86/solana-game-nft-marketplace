@@ -27,7 +27,6 @@ contract GameItemNFT is
     mapping(uint256 => address) public tokenGameAuthority;
     mapping(address => EnumerableSet.UintSet) private _ownedTokenIds;
 
-    // EIP-712 typehash
     bytes32 private constant MINT_TYPEHASH =
         keccak256(
             "Mint(address gameAuthority,address to,string uri,uint256 amount,uint256 nonce)"
@@ -51,14 +50,7 @@ contract GameItemNFT is
         registry = GameRegistry(registryAddress);
     }
 
-    /**
-     * Mint using backend signature authorization.
-     *
-     * Backend signs typed data:
-     *   to
-     *   uri
-     *   nonce
-     */
+    /// Mint one token to `to` using a backend-issued EIP-712 signature.
     function mintWithSignature(
         address gameAuthority,
         address to,
@@ -69,6 +61,7 @@ contract GameItemNFT is
         return _mintWithSignature(gameAuthority, to, tokenUri, 1, nonce, signature);
     }
 
+    /// Validates the signature, sets royalty config from the registry, and mints the token.
     function _mintWithSignature(
         address gameAuthority,
         address to,
@@ -101,6 +94,7 @@ contract GameItemNFT is
         return tokenId;
     }
 
+    /// Hashes the typed data, checks it hasn't been used, verifies the signer, and marks it consumed.
     function _validateAndConsumeSignature(
         address gameAuthority,
         address to,
@@ -128,6 +122,7 @@ contract GameItemNFT is
         usedDigests[digest] = true;
     }
 
+    /// Keeps `_ownedTokenIds` in sync on every transfer/mint/burn.
     function _update(
         address from,
         address to,
@@ -140,22 +135,29 @@ contract GameItemNFT is
             uint256 tokenId = ids[i];
 
             if (from != address(0) && balanceOf(from, tokenId) == 0) {
-                _ownedTokenIds[from].remove(tokenId);
+                if (_ownedTokenIds[from].contains(tokenId)) {
+                    bool removed = _ownedTokenIds[from].remove(tokenId);
+                    require(removed, "Remove token tracking failed");
+                }
             }
 
             if (to != address(0) && balanceOf(to, tokenId) > 0) {
-                _ownedTokenIds[to].add(tokenId);
+                if (!_ownedTokenIds[to].contains(tokenId)) {
+                    bool added = _ownedTokenIds[to].add(tokenId);
+                    require(added, "Add token tracking failed");
+                }
             }
         }
     }
 
+    /// Returns all token IDs owned by `player` that belong to the given game.
     function getPlayerTokenIdsByGame(
         address player,
         address gameAuthority
     ) external view returns (uint256[] memory) {
         EnumerableSet.UintSet storage owned = _ownedTokenIds[player];
         uint256 ownedLen = owned.length();
-        uint256 matched;
+        uint256 matched = 0;
 
         for (uint256 i = 0; i < ownedLen; i++) {
             uint256 tokenId = owned.at(i);
@@ -165,7 +167,7 @@ contract GameItemNFT is
         }
 
         uint256[] memory tokenIds = new uint256[](matched);
-        uint256 outIdx;
+        uint256 outIdx = 0;
         for (uint256 i = 0; i < ownedLen; i++) {
             uint256 tokenId = owned.at(i);
             if (tokenGameAuthority[tokenId] == gameAuthority) {
@@ -177,6 +179,7 @@ contract GameItemNFT is
         return tokenIds;
     }
 
+    /// Returns all token IDs and their balances for a player within a given game.
     function getPlayerTokenIdsAndBalancesByGame(
         address player,
         address gameAuthority
@@ -187,7 +190,7 @@ contract GameItemNFT is
     {
         EnumerableSet.UintSet storage owned = _ownedTokenIds[player];
         uint256 ownedLen = owned.length();
-        uint256 matched;
+        uint256 matched = 0;
 
         for (uint256 i = 0; i < ownedLen; i++) {
             uint256 tokenId = owned.at(i);
@@ -198,7 +201,7 @@ contract GameItemNFT is
 
         tokenIds = new uint256[](matched);
         balances = new uint256[](matched);
-        uint256 outIdx;
+        uint256 outIdx = 0;
         for (uint256 i = 0; i < ownedLen; i++) {
             uint256 tokenId = owned.at(i);
             if (tokenGameAuthority[tokenId] == gameAuthority) {

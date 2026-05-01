@@ -3,14 +3,7 @@ pragma solidity ^0.8.28;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-/**
- * Game registry: platform-authority-only register/update/remove of game metadata.
- * Mirrors the Solana game_registry program (one game per authority).
- */
 contract GameRegistry is Ownable {
-    // -------------------------------------------------------------------------
-    // Constants (match Solana game_registry)
-    // -------------------------------------------------------------------------
 
     /// Maximum fee percent in basis points (2000 = 20%).
     uint16 public constant FEE_PERCENT_MAX = 2000;
@@ -20,10 +13,6 @@ contract GameRegistry is Ownable {
     uint256 public constant IMAGE_URI_MAX_LEN = 500;
     uint256 public constant URI_MAX_LEN = 500;
     uint256 public constant CATEGORY_MAX_LEN = 64;
-
-    // -------------------------------------------------------------------------
-    // State
-    // -------------------------------------------------------------------------
 
     struct Game {
         address authority;
@@ -52,10 +41,6 @@ contract GameRegistry is Ownable {
         uint16 feePercentBps;
     }
 
-    // -------------------------------------------------------------------------
-    // Errors
-    // -------------------------------------------------------------------------
-
     error Unauthorized();
     error FeePercentTooHigh();
     error NameTooLong();
@@ -66,41 +51,23 @@ contract GameRegistry is Ownable {
     error GameNotFound();
     error GameAlreadyRegistered();
 
-    // -------------------------------------------------------------------------
-    // Events
-    // -------------------------------------------------------------------------
-
     event GameRegistered(address indexed authority, string name);
     event GameUpdated(address indexed authority, string name);
     event GameRemoved(address indexed authority);
 
-    // -------------------------------------------------------------------------
-    // Constructor
-    // -------------------------------------------------------------------------
-
     constructor(address _platformAuthority) Ownable(_platformAuthority) {}
-
-    // -------------------------------------------------------------------------
-    // Modifiers
-    // -------------------------------------------------------------------------
 
     modifier onlyPlatformAuthority() {
         _checkOwner();
         _;
     }
 
-    /// Backward-compatiblity for tests
+    /// This is used only for backward compatibility for testing (Ownable interface was implemented later)
     function platformAuthority() external view returns (address) {
         return owner();
     }
 
-    // -------------------------------------------------------------------------
-    // External (platform authority only)
-    // -------------------------------------------------------------------------
-
-    /**
-     * Register a game. One game per authority.
-     */
+    /// Register a new game. One game per authority; reverts if already registered.
     function registerGame(GameInput calldata input) public onlyPlatformAuthority {
         if (games[input.authority].exists) revert GameAlreadyRegistered();
         _validateLengths(input.name, input.description, input.imageUri, input.uri, input.category);
@@ -121,9 +88,8 @@ contract GameRegistry is Ownable {
     }
 
     /**
-     * Update game metadata. All string fields are set to the values passed (pass
-     * empty string to clear). For feeRecipient, pass address(0) to keep current.
-     * For feePercentBps, pass a value > FEE_PERCENT_MAX (e.g. 0xFFFF) to keep current.
+     * Update game metadata. All string fields are overwritten; pass empty string to clear.
+     * Pass address(0) for feeRecipient to keep current. Pass a value > FEE_PERCENT_MAX to keep current fee.
      */
     function updateGame(GameInput calldata input) public onlyPlatformAuthority {
         Game storage game = games[input.authority];
@@ -145,6 +111,7 @@ contract GameRegistry is Ownable {
         emit GameUpdated(input.authority, game.name);
     }
 
+    /// Reverts if any string field exceeds its maximum byte length.
     function _validateLengths(
         string calldata name,
         string calldata description,
@@ -159,18 +126,12 @@ contract GameRegistry is Ownable {
         if (bytes(category).length > CATEGORY_MAX_LEN) revert CategoryTooLong();
     }
 
-    /**
-     * Remove a game (clears storage, same idea as Solana close).
-     */
+    /// Remove a game and clear its storage.
     function removeGame(address authority) public onlyPlatformAuthority {
         if (!games[authority].exists) revert GameNotFound();
         delete games[authority];
         emit GameRemoved(authority);
     }
-
-    // -------------------------------------------------------------------------
-    // View
-    // -------------------------------------------------------------------------
 
     function getGame(address authority) external view returns (Game memory) {
         return games[authority];

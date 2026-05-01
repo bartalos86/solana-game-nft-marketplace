@@ -3,7 +3,6 @@
 import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Keypair } from '@solana/web3.js'
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { Copy, Check, KeyRound, AlertTriangle, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,19 +23,13 @@ function encodeSecretKeyBase64(secretKey: Uint8Array): string {
 export interface GeneratedKeys {
   solanaPublicKey: string
   solanaPrivateKey: string
-  ethereumPublicKey: string
-  ethereumPrivateKey: string
 }
 
 function generateKeypairs(): GeneratedKeys {
   const solanaKp = Keypair.generate()
-  const ethKey = generatePrivateKey()
-  const ethAccount = privateKeyToAccount(ethKey)
   return {
     solanaPublicKey: solanaKp.publicKey.toBase58(),
     solanaPrivateKey: encodeSecretKeyBase64(solanaKp.secretKey),
-    ethereumPublicKey: ethAccount.address,
-    ethereumPrivateKey: ethKey,
   }
 }
 
@@ -128,7 +121,7 @@ export default function RegisterGamePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const handleRegenerateKeys = useCallback(() => {
-    if (window.confirm('Regenerate keys? Your current private keys will be lost — make sure you have saved them.')) {
+    if (window.confirm('Regenerate keys? Your current private key will be lost — make sure you have saved it.')) {
       setKeys(generateKeypairs())
     }
   }, [])
@@ -144,7 +137,6 @@ export default function RegisterGamePage() {
       category: category.trim(),
       gameUrl: gameUrl.trim() || undefined,
       solanaPublicKey: keys.solanaPublicKey,
-      ethereumPublicKey: keys.ethereumPublicKey,
     }
     const parsed = createGameSchema.safeParse(payload)
     if (!parsed.success) {
@@ -189,7 +181,7 @@ export default function RegisterGamePage() {
             Register a Game
           </h1>
           <p className="mt-3 text-base text-blue-100/60">
-            Fill in your game details below. Keypairs are generated automatically — only public keys are stored on the server.
+            Fill in your game details below. A Solana keypair is generated automatically and only the public key is stored on the server.
           </p>
         </div>
 
@@ -282,10 +274,10 @@ export default function RegisterGamePage() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-white/40">
-                  Generated Keypairs
+                  Generated Solana Keypair
                 </h2>
                 <p className="mt-0.5 text-xs text-blue-200/50">
-                  Auto-generated on page load. Only public keys are sent to the server.
+                  Auto-generated on page load. Only the public key is sent to the server.
                 </p>
               </div>
               <button
@@ -321,19 +313,6 @@ export default function RegisterGamePage() {
               </div>
             </div>
 
-            {/* Ethereum keys */}
-            <div className="rounded-xl border border-white/7 bg-black/10 p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <div className="h-5 w-5 rounded-full bg-linear-to-br from-blue-400 to-cyan-500 p-0.5">
-                  <div className="h-full w-full rounded-full bg-black/30" />
-                </div>
-                <span className="text-xs font-semibold text-white/60 uppercase tracking-wider">Ethereum</span>
-              </div>
-              <div className="space-y-3">
-                <KeyRow label="Public address" value={keys.ethereumPublicKey} isPrivate={false} />
-                <KeyRow label="Private key (hex)" value={keys.ethereumPrivateKey} isPrivate />
-              </div>
-            </div>
           </div>
 
           {/* Error */}

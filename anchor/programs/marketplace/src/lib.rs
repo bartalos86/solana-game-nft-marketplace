@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::pubkey;
 use anchor_spl::{
     associated_token::AssociatedToken,
     token_interface::{Mint, TokenAccount, TokenInterface},
@@ -10,7 +9,7 @@ use mpl_token_metadata::instructions::{
 
 declare_id!("2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq");
 
-/// Marketplace fee in basis points (10000 = 100%). e.g. 250 = 2.5% — sent to static deployment address.
+/// Marketplace fee in basis points (250 = 2.5%) sent to the static fee recipient address.
 pub const MARKETPLACE_FEE_BPS: u16 = 250;
 
 pub const MARKETPLACE_FEE_RECIPIENT: Pubkey =
@@ -20,16 +19,15 @@ pub const MARKETPLACE_FEE_RECIPIENT: Pubkey =
 pub mod marketplace {
     use super::*;
 
+    /// List an NFT for sale: initialise a listing PDA and transfer the token into escrow.
     pub fn list_nft(ctx: Context<ListNft>, price: u64, expiry: i64) -> Result<()> {
         let listing = &mut ctx.accounts.listing;
         listing.seller = ctx.accounts.seller.key();
         listing.mint = ctx.accounts.mint.key();
         listing.price = price;
         listing.expiry = expiry;
-        // Updated bump syntax for Anchor 0.30+
         listing.bump = ctx.bumps.listing;
 
-        // Use Metaplex TransferV1 CPI for pNFT/NFT compatibility (documented pattern)
         let metadata_program_info = ctx.accounts.token_metadata_program.to_account_info();
         let token_info = ctx.accounts.seller_token_account.to_account_info();
         let owner_info = ctx.accounts.seller.to_account_info();
@@ -42,7 +40,7 @@ pub mod marketplace {
         let sysvar_instructions_info = ctx.accounts.sysvar_instructions.to_account_info();
         let spl_token_program_info = ctx.accounts.token_program.to_account_info();
         let spl_ata_program_info = ctx.accounts.associated_token_program.to_account_info();
-        // Documented pattern: TransferV1Cpi::new(program, TransferV1CpiAccounts { ... }, TransferV1InstructionArgs { ... })
+
         let cpi_transfer = TransferV1Cpi::new(
             &metadata_program_info,
             TransferV1CpiAccounts {
@@ -74,6 +72,7 @@ pub mod marketplace {
         Ok(())
     }
 
+    /// Purchase a listed NFT: distributes lamports (seller, marketplace fee, royalty) and transfers the token to the buyer.
     pub fn buy_nft(ctx: Context<BuyNft>) -> Result<()> {
         let listing = &ctx.accounts.listing;
         require!(
@@ -115,7 +114,6 @@ pub mod marketplace {
 
         let sys = ctx.accounts.system_program.to_account_info();
 
-        // buyer → seller
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 sys.clone(),
@@ -127,7 +125,6 @@ pub mod marketplace {
             to_seller,
         )?;
 
-        // buyer → marketplace fee recipient
         anchor_lang::system_program::transfer(
             CpiContext::new(
                 sys.clone(),
@@ -153,7 +150,7 @@ pub mod marketplace {
             fee_update_authority,
         )?;
 
-        // PDA signer seeds for the listing account (acts as escrow authority)
+        // PDA signer seeds for the listing account (escrow authority)
         let seller_key = listing.seller;
         let mint_key = listing.mint;
         let bump = listing.bump;
@@ -165,7 +162,6 @@ pub mod marketplace {
         ];
         let signer_seeds = &[seeds.as_slice()];
 
-        // Transfer NFT from escrow to buyer via Metaplex TransferV1 (documented pattern)
         let metadata_program_info = ctx.accounts.token_metadata_program.to_account_info();
         let token_info = ctx.accounts.escrow_token_account.to_account_info();
         let vault_info = ctx.accounts.listing.to_account_info();
@@ -179,7 +175,7 @@ pub mod marketplace {
         let sysvar_instructions_info = ctx.accounts.sysvar_instructions.to_account_info();
         let spl_token_program_info = ctx.accounts.token_program.to_account_info();
         let spl_ata_program_info = ctx.accounts.associated_token_program.to_account_info();
-        // Documented pattern: TransferV1Cpi::new(...); cpi_transfer.invoke_signed(&[&signer_seeds])
+
         let cpi_transfer = TransferV1Cpi::new(
             &metadata_program_info,
             TransferV1CpiAccounts {
@@ -211,6 +207,7 @@ pub mod marketplace {
         Ok(())
     }
 
+    /// Cancel a listing: only the original seller can call this; returns the token from escrow.
     pub fn cancel_listing(ctx: Context<CancelListing>) -> Result<()> {
         let listing = &ctx.accounts.listing;
 
@@ -230,7 +227,6 @@ pub mod marketplace {
         ];
         let signer_seeds = &[seeds.as_slice()];
 
-        // Return NFT from escrow back to seller via Metaplex TransferV1 (documented pattern)
         let metadata_program_info = ctx.accounts.token_metadata_program.to_account_info();
         let token_info = ctx.accounts.escrow_token_account.to_account_info();
         let vault_info = ctx.accounts.listing.to_account_info();
@@ -244,7 +240,7 @@ pub mod marketplace {
         let sysvar_instructions_info = ctx.accounts.sysvar_instructions.to_account_info();
         let spl_token_program_info = ctx.accounts.token_program.to_account_info();
         let spl_ata_program_info = ctx.accounts.associated_token_program.to_account_info();
-        // Documented pattern: TransferV1Cpi::new(...); cpi_transfer.invoke_signed(&[&signer_seeds])
+
         let cpi_transfer = TransferV1Cpi::new(
             &metadata_program_info,
             TransferV1CpiAccounts {
@@ -312,22 +308,18 @@ pub struct ListNft<'info> {
     )]
     pub escrow_token_account: InterfaceAccount<'info, TokenAccount>,
 
-    /// Metaplex Metadata account for the NFT mint
     /// CHECK: Validated by Metaplex CPI
     #[account(mut)]
     pub metadata: UncheckedAccount<'info>,
 
-    /// Metaplex Master Edition account
     /// CHECK: Validated by Metaplex CPI
     #[account(mut)]
     pub master_edition: UncheckedAccount<'info>,
 
-    /// Token record for seller (required for pNFTs, Optional for standard NFTs)
     /// CHECK: Validated by Metaplex CPI
     #[account(mut)]
     pub seller_token_record: Option<UncheckedAccount<'info>>,
 
-    /// Token record for escrow (required for pNFTs)
     /// CHECK: Validated by Metaplex CPI
     #[account(mut)]
     pub escrow_token_record: Option<UncheckedAccount<'info>>,
