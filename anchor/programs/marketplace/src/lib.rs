@@ -11,6 +11,8 @@ declare_id!("2T5eYk6cXCJehK5iJy9eQtTgPehDzChYhH1AnSTwWLWq");
 
 /// Marketplace fee in basis points (250 = 2.5%) sent to the static fee recipient address.
 pub const MARKETPLACE_FEE_BPS: u16 = 250;
+/// Minimum allowed listing price in lamports (0.001 SOL).
+pub const MIN_LISTING_PRICE: u64 = 1_000_000;
 
 pub const MARKETPLACE_FEE_RECIPIENT: Pubkey =
     pubkey!("5GLPnCWkDniHq4B7o7K5fsxRKf4xpprX2ENngRs4VGeB");
@@ -21,6 +23,10 @@ pub mod marketplace {
 
     /// List an NFT for sale: initialise a listing PDA and transfer the token into escrow.
     pub fn list_nft(ctx: Context<ListNft>, price: u64, expiry: i64) -> Result<()> {
+        require!(price > 0, ErrorCode::InvalidPrice);
+        require!(price >= MIN_LISTING_PRICE, ErrorCode::PriceBelowMinimum);
+        require!(expiry > Clock::get()?.unix_timestamp, ErrorCode::InvalidExpiry);
+
         let listing = &mut ctx.accounts.listing;
         listing.seller = ctx.accounts.seller.key();
         listing.mint = ctx.accounts.mint.key();
@@ -490,6 +496,12 @@ impl ListingAccount {
 
 #[error_code]
 pub enum ErrorCode {
+    #[msg("Listing price must be greater than zero.")]
+    InvalidPrice,
+    #[msg("Listing price is below the minimum allowed.")]
+    PriceBelowMinimum,
+    #[msg("Listing expiry must be in the future.")]
+    InvalidExpiry,
     #[msg("The listing has expired.")]
     ListingExpired,
     #[msg("You are not authorized to perform this action.")]

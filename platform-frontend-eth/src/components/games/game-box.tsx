@@ -1,7 +1,7 @@
 "use client"
 import React from 'react'
 import Image from 'next/image'
-import { SwordIcon, ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 
 interface GameBoxProps {
   id: string
@@ -20,8 +20,6 @@ export function GameBox({
   title,
   description,
   imageUrl,
-  itemCount,
-  price,
   category,
   isFeatured = false,
   onClick
@@ -81,18 +79,6 @@ export function GameBox({
             {description}
           </p>
         )}
-
-        {/* Footer */}
-        <div className="mt-auto flex items-center justify-between border-t border-white/6 pt-3">
-          <div className="flex items-center gap-1 text-white/30">
-            <SwordIcon className="h-3.5 w-3.5" />
-            <span className="text-xs">{itemCount.toLocaleString()} items</span>
-          </div>
-          <div className="text-right">
-            <span className="text-sm font-semibold text-emerald-400">{price}</span>
-            <span className="ml-1 text-xs text-white/30">ETH</span>
-          </div>
-        </div>
       </div>
     </div>
   )

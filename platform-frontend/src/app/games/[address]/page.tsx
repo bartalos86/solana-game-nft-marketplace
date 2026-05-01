@@ -1,6 +1,5 @@
 'use client'
 
-import { NFTItemsFilter } from '@/components/game-items/game-items-filter'
 import { NFTItem, NFTItemsGrid } from '@/components/game-items/game-items-grid'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { usePathname, useRouter, useParams } from 'next/navigation'
@@ -32,8 +31,6 @@ export default function GameDetailPage() {
 
   const [gameInfo, setGameInfo] = useState<OnChainGameInfo | null>(null)
   const [gameError, setGameError] = useState<string | null>(null)
-  const [selectedRarity, setSelectedRarity] = useState('All')
-  const [selectedPriceRange, setSelectedPriceRange] = useState('All')
   const [items, setItems] = useState<NFTItem[]>([])
 
   const wallet = useWallet()
@@ -163,12 +160,12 @@ export default function GameDetailPage() {
 
       {/* Items */}
       <div className="mx-auto max-w-6xl px-4 py-8">
-        <NFTItemsFilter
-          selectedRarity={selectedRarity}
-          selectedPriceRange={selectedPriceRange}
-          onRarityChange={setSelectedRarity}
-          onPriceRangeChange={setSelectedPriceRange}
-        />
+        <div className="mb-4 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-white/90">Your items</h2>
+          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/60">
+            {items.length}
+          </span>
+        </div>
 
         <NFTItemsGrid items={items} onItemClick={handleItemClick} />
       </div>
