@@ -20,7 +20,7 @@ contract GameFactory is GameRegistry {
         string name
     );
 
-    /// Platform authority is the deployer (mirrors Solana's fixed PLATFORM_AUTHORITY).
+    /// Platform authority is the deployer
     constructor() GameRegistry(msg.sender) {
         gameItems = new GameItemNFT(address(this));
     }

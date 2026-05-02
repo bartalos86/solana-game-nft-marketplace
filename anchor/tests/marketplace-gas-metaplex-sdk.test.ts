@@ -1,11 +1,6 @@
 /**
  * NFT Marketplace — compute-unit benchmarks using Metaplex Token Metadata SDK
  *
- * Same tests as marketplace-gas.test.ts but uses @metaplex-foundation/mpl-token-metadata
- * createMetadataAccountV3 and createMasterEditionV3 instead of hand-rolled instructions.
- *
- * Run: anchor test (or vitest run tests/marketplace-gas-metaplex-sdk.test.ts)
- * Anchor.toml must clone the Metaplex metadata program (see [test.validator]).
  */
 
 import * as anchor from "@coral-xyz/anchor"

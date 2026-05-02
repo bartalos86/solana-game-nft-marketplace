@@ -1,10 +1,6 @@
 /**
  * Solana load & burst tests for mint/list/buy.
  *
- * Run:
- *   anchor test
- * or
- *   vitest run tests/marketplace-load-burst.test.ts
  */
 
 import * as anchor from "@coral-xyz/anchor";

@@ -1,10 +1,8 @@
 /**
  * Game registry program tests.
  *
- * Uses AnchorProvider.env() (set by `anchor test`). Tests register_game,
- * update_game, validation errors, and compute-unit usage.
  *
- * Run: anchor test (or vitest run tests/game-registry.test.ts)
+ * Run: anchor test
  */
 
 import * as anchor from "@coral-xyz/anchor"

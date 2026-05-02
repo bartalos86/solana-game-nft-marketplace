@@ -3,7 +3,7 @@
  *   - list + buy
  *   - list + cancel
  *
- * Focus: transaction fee + temporary storage lock (new-account rent) per tx
+ *  Transaction fee + temporary storage lock (new-account rent) per tx
  * and per combo on Solana.
  */
 

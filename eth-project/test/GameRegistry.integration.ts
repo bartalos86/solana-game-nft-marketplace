@@ -1,5 +1,5 @@
 /**
- * GameRegistry integration tests (mirrors Solana game_registry tests).
+ * GameRegistry integration tests.
  * Run: pnpm exec hardhat test test/GameRegistry.integration.ts
  */
 

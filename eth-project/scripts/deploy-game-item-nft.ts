@@ -8,7 +8,7 @@ async function main() {
     "My Game Items",   // name
     "MGIT",            // symbol
     deployer.account.address, // gameAuthority (owner, can mint)
-    550,               // royaltyBps — 5.5%, same as your sellerFeeBasisPoints(5.5)
+    550,               // royaltyBps — 5.5%
   ]);
 
   console.log("GameItemNFT deployed to:", contract.address);
